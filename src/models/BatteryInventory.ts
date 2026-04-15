@@ -1,0 +1,9 @@
+import { Schema, model } from "mongoose";
+const schema = new Schema({
+  dealerId: { type: String, index: true },
+  tenantId: String,
+  batteryNo: { type: String, unique: true, index: true },
+  description: String,
+  qtyOnHand: { type: Number, default: 0 }
+}, { timestamps: true });
+export default model("BatteryInventory", schema);
