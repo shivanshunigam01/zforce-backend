@@ -40,7 +40,7 @@ import ReportExportJob from "../models/ReportExportJob";
 import { AppError } from "../utils/errors";
 
 const router = Router();
-router.use(authJwt(["dealer", "super_admin"]), requireDealerScope);
+router.use(authJwt(["dealer", "super_admin", "ho_staff"]), requireDealerScope);
 
 function dealerFilter(req: any) {
   return { dealerId: req.user.dealerId };

@@ -5,6 +5,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
 import { env } from "./config/env";
+import { AppError } from "./utils/errors";
 import { connectDb } from "./db/mongoose";
 import { requestId } from "./middleware/requestId";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
@@ -23,9 +24,10 @@ app.use(helmet());
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || env.corsOrigins.length === 0 || env.corsOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error("Origin not allowed"));
+    return callback(new AppError(403, "CORS_FORBIDDEN", `Origin not allowed: ${origin}`));
   },
-  credentials: true
+  credentials: true,
+  allowedHeaders: ["Content-Type", "Authorization", "X-Dealer-Id", "Accept-Language", "X-Storefront-Slug"],
 }));
 app.use(cookieParser());
 app.use(morgan("dev"));

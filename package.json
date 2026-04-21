@@ -5,10 +5,12 @@
   "description": "ZForce production-ready REST API scaffold",
   "main": "dist/app.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
+    "dev": "nodemon",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/app.js",
-    "seed": "ts-node --transpile-only src/scripts/seed.ts"
+    "seed": "ts-node --transpile-only src/scripts/seed.ts",
+    "clear-db": "ts-node --transpile-only src/scripts/clear-db.ts",
+    "reset-db": "npm run clear-db && npm run seed"
   },
   "dependencies": {
     "axios": "^1.7.9",
@@ -35,6 +37,7 @@
     "@types/jsonwebtoken": "^9.0.6",
     "@types/morgan": "^1.9.9",
     "@types/node": "^22.10.1",
+    "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.7.2"

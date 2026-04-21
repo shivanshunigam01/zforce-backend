@@ -7,6 +7,23 @@ function required(name: string, fallback?: string): string {
   return value;
 }
 
+/** Vite dev server for project-sanctuary uses port 8080; proxied POSTs send Origin: http://localhost:8080. */
+function parseCorsOrigins(): string[] {
+  const fromEnv = (process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const nodeEnv = process.env.NODE_ENV || "development";
+  if (nodeEnv === "production") return fromEnv;
+  const devExtras = [
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://localhost:5173",
+    "http://localhost:3000",
+  ];
+  return [...new Set([...fromEnv, ...devExtras])];
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   port: Number(process.env.PORT || 4000),
@@ -16,7 +33,7 @@ export const env = {
   jwtRefreshSecret: required("JWT_REFRESH_SECRET", "dev_refresh"),
   jwtAccessTtl: process.env.JWT_ACCESS_TTL || "15m",
   jwtRefreshTtl: process.env.JWT_REFRESH_TTL || "30d",
-  corsOrigins: (process.env.CORS_ORIGINS || "").split(",").map((v) => v.trim()).filter(Boolean),
+  corsOrigins: parseCorsOrigins(),
   cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME || "",
   cloudinaryApiKey: process.env.CLOUDINARY_API_KEY || "",
   cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET || "",
