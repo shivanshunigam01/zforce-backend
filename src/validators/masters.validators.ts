@@ -16,6 +16,7 @@ const masterTypeEnum = z.enum([
 
 export const mastersListQuerySchema = z.object({
   type: masterTypeEnum,
+  dealerId: z.string().optional(),
   page: z.coerce.number().optional(),
   limit: z.coerce.number().optional(),
 });
