@@ -3,8 +3,10 @@ import { Router } from "express";
 import { authJwt } from "../middleware/authJwt";
 import { validate } from "../middleware/validate";
 import { panelAccountEnabledSchema, panelAccountPasswordChangeSchema } from "../validators/auth.validators";
+import { createMasterSchema, mastersListQuerySchema, updateMasterSchema } from "../validators/masters.validators";
 import { createStaffSchema, updateStaffSchema } from "../validators/staff.validators";
 import HoStaff from "../models/HoStaff";
+import MasterRecord from "../models/MasterRecord";
 import { hashPassword, verifyPassword } from "../utils/auth";
 import { getPagination } from "../utils/pagination";
 import { paginated, toJSON } from "../utils/api";
@@ -65,6 +67,16 @@ async function nextHoEmployeeId(): Promise<string> {
     if (m) max = Math.max(max, Number(m[1]));
   }
   return `EMP-${String(max + 1).padStart(3, "0")}`;
+}
+
+function resolveMasterDealerId(req: any): string {
+  const byQuery = String(req.query.dealerId || "").trim();
+  if (byQuery) return byQuery;
+  const byHeader = String(req.header("x-dealer-id") || "").trim();
+  if (byHeader) return byHeader;
+  const byJwt = String(req.user?.dealerId || "").trim();
+  if (byJwt) return byJwt;
+  return "dealer-demo";
 }
 
 router.get("/tenants", async (req, res, next) => { try { await list(req, res, Tenant); } catch (e) { next(e); } });
@@ -157,6 +169,67 @@ router.get("/cms/default-products", async (req, res, next) => { try { await list
 router.put("/cms/default-products", async (req, res) => { res.json({ data: { note: "Bulk replace default products placeholder" } }); });
 router.get("/cms/default-hero", async (req, res) => { res.json({ data: { hero: [] } }); });
 router.put("/cms/default-hero", async (req, res) => { res.json({ data: { hero: req.body } }); });
+
+/** Admin Master Management: fully MongoDB-backed (no local-only static data). */
+router.get("/masters", validate(mastersListQuerySchema, "query"), async (req, res, next) => {
+  try {
+    const dealerId = resolveMasterDealerId(req);
+    const { page, limit, skip } = getPagination(req.query);
+    const filter = { dealerId, type: req.query.type };
+    const [rows, total] = await Promise.all([
+      MasterRecord.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      MasterRecord.countDocuments(filter),
+    ]);
+    res.json(paginated(page, limit, total, rows.map(toJSON)));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post("/masters", validate(createMasterSchema), async (req, res, next) => {
+  try {
+    const dealerId = resolveMasterDealerId(req);
+    const sf = await StorefrontModel.findOne({ dealerId }).select("tenantId");
+    const row = await MasterRecord.create({
+      dealerId,
+      tenantId: sf?.tenantId || req.user?.tenantId || "",
+      type: req.body.type,
+      code: req.body.code || "",
+      name: req.body.name,
+      status: req.body.status || "Active",
+      extra: req.body.extra || {},
+    });
+    res.status(201).json({ data: toJSON(row) });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.patch("/masters/:id", validate(updateMasterSchema), async (req, res, next) => {
+  try {
+    const dealerId = resolveMasterDealerId(req);
+    const row = await MasterRecord.findOneAndUpdate(
+      { _id: req.params.id, dealerId },
+      { $set: req.body },
+      { new: true },
+    );
+    if (!row) throw new AppError(404, "NOT_FOUND", "Master row not found");
+    res.json({ data: toJSON(row) });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete("/masters/:id", async (req, res, next) => {
+  try {
+    const dealerId = resolveMasterDealerId(req);
+    const row = await MasterRecord.findOneAndDelete({ _id: req.params.id, dealerId });
+    if (!row) throw new AppError(404, "NOT_FOUND", "Master row not found");
+    res.json({ data: { success: true } });
+  } catch (e) {
+    next(e);
+  }
+});
 
 /** HO employee directory (User Management) — MongoDB-backed, not localStorage. */
 router.get("/staff-directory", async (req, res, next) => {
