@@ -5,7 +5,6 @@ import { validate } from "../middleware/validate";
 import { panelAccountEnabledSchema, panelAccountPasswordChangeSchema } from "../validators/auth.validators";
 import { createStaffSchema, updateStaffSchema } from "../validators/staff.validators";
 import HoStaff from "../models/HoStaff";
-import { HO_STAFF_DEMO } from "../seed/hoStaffDemo";
 import { hashPassword, verifyPassword } from "../utils/auth";
 import { getPagination } from "../utils/pagination";
 import { paginated, toJSON } from "../utils/api";
@@ -168,19 +167,6 @@ router.get("/staff-directory", async (req, res, next) => {
       HoStaff.countDocuments({}),
     ]);
     res.json(paginated(page, limit, total, rows.map(serializeStaff)));
-  } catch (e) {
-    next(e);
-  }
-});
-
-router.post("/staff-directory/seed-demo", async (req, res, next) => {
-  try {
-    const n = await HoStaff.countDocuments({});
-    if (n > 0) {
-      return res.json({ data: { inserted: 0, message: "Staff directory already has records; skipped." } });
-    }
-    await HoStaff.insertMany(HO_STAFF_DEMO);
-    res.status(201).json({ data: { inserted: HO_STAFF_DEMO.length, message: "Demo staff seeded." } });
   } catch (e) {
     next(e);
   }
