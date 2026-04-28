@@ -35,3 +35,7 @@ export const panelAccountPasswordChangeSchema = z.object({
 export const panelAccountEnabledSchema = z.object({
   enabled: z.boolean()
 });
+
+export const panelAccountPermissionsSchema = z.object({
+  permissions: z.array(z.string().min(1)).max(64)
+});

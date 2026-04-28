@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { Router } from "express";
 import { authJwt, requireTenantScope } from "../middleware/authJwt";
+import { requireModulePermission } from "../middleware/panelPermissions";
 import { getPagination } from "../utils/pagination";
 import { paginated, toJSON } from "../utils/api";
 import { AppError } from "../utils/errors";
@@ -28,6 +29,19 @@ import Product from "../models/Product";
 
 const router = Router({ mergeParams: true });
 router.use(authJwt(["distributor", "super_admin"]), requireTenantScope);
+router.use((req, res, next) => {
+  const p = req.path || "";
+  if (p === "/dashboard" || p.startsWith("/dashboard")) return requireModulePermission("dashboard")(req, res, next);
+  if (p.startsWith("/masters/")) return requireModulePermission("master_management")(req, res, next);
+  if (p.startsWith("/crm/")) return requireModulePermission("crm")(req, res, next);
+  if (p.startsWith("/dealers") || p.startsWith("/dealer-applications")) return requireModulePermission("dealer_management")(req, res, next);
+  if (p.startsWith("/inventory/") || p.startsWith("/b2b-orders") || p.startsWith("/dispatches")) return requireModulePermission("inventory")(req, res, next);
+  if (p.startsWith("/accounts/invoices")) return requireModulePermission("invoicing")(req, res, next);
+  if (p.startsWith("/accounts/")) return requireModulePermission("payments")(req, res, next);
+  if (p.startsWith("/cms/")) return requireModulePermission("cms")(req, res, next);
+  if (p.startsWith("/reports")) return requireModulePermission("reports")(req, res, next);
+  return next();
+});
 
 function tenantFilter(req: any) { return { tenantId: req.params.tenantId }; }
 async function list(req: any, res: any, Model: any, filter: any = {}, sort: any = { createdAt: -1 }) {

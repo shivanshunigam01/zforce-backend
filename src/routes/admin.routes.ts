@@ -2,7 +2,7 @@
 import { Router } from "express";
 import { authJwt } from "../middleware/authJwt";
 import { validate } from "../middleware/validate";
-import { panelAccountEnabledSchema, panelAccountPasswordChangeSchema } from "../validators/auth.validators";
+import { panelAccountEnabledSchema, panelAccountPasswordChangeSchema, panelAccountPermissionsSchema } from "../validators/auth.validators";
 import { createMasterSchema, mastersListQuerySchema, updateMasterSchema } from "../validators/masters.validators";
 import { createStaffSchema, updateStaffSchema } from "../validators/staff.validators";
 import HoStaff from "../models/HoStaff";
@@ -124,6 +124,39 @@ router.patch("/panel-accounts/:userId/enabled", validate(panelAccountEnabledSche
     );
     if (!user) throw new AppError(404, "NOT_FOUND", "Panel user not found");
     res.json({ data: { success: true, userId: user.userId, isActive: user.isActive } });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get("/panel-accounts/permissions", async (_req, res, next) => {
+  try {
+    const users = await User.find({ role: { $in: ["dealer", "distributor"] } })
+      .select("userId role permissions")
+      .lean();
+    const data = users.map((u: any) => ({
+      userId: String(u.userId || ""),
+      role: String(u.role || ""),
+      permissions: Array.isArray(u.permissions) ? u.permissions : [],
+    }));
+    res.json({ data });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.patch("/panel-accounts/:userId/permissions", validate(panelAccountPermissionsSchema), async (req, res, next) => {
+  try {
+    const user = await User.findOneAndUpdate(
+      { userId: req.params.userId, role: { $in: ["dealer", "distributor"] } },
+      { permissions: req.body.permissions },
+      { new: true }
+    );
+    if (!user) throw new AppError(404, "NOT_FOUND", "Panel user not found");
+    // mongoose update pipeline in findOneAndUpdate can be finicky across versions; ensure version bump.
+    user.refreshTokenVersion = (user.refreshTokenVersion || 0) + 1;
+    await user.save();
+    res.json({ data: { success: true, userId: user.userId, permissions: user.permissions || [] } });
   } catch (e) {
     next(e);
   }

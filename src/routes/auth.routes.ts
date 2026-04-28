@@ -77,7 +77,8 @@ async function loginAdminPanel(req: any, res: any) {
         displayName: user.displayName,
         tenantId: user.tenantId,
         dealerId: user.dealerId,
-        branchIds: user.branchIds || []
+        branchIds: user.branchIds || [],
+        permissions: user.permissions || []
       }
     }
   });
@@ -136,7 +137,8 @@ async function loginByRole(req: any, res: any, role: string) {
         displayName: user.displayName,
         tenantId: user.tenantId,
         dealerId: user.dealerId,
-        branchIds: user.branchIds || []
+        branchIds: user.branchIds || [],
+        permissions: user.permissions || []
       }
     }
   });

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { Router } from "express";
 import { authJwt, requireDealerScope } from "../middleware/authJwt";
+import { requireModulePermission } from "../middleware/panelPermissions";
 import { buildSignedUploadParams } from "../services/cloudinary.service";
 import { getPagination } from "../utils/pagination";
 import { paginated, toJSON } from "../utils/api";
@@ -41,6 +42,30 @@ import { AppError } from "../utils/errors";
 
 const router = Router();
 router.use(authJwt(["dealer", "super_admin", "ho_staff"]), requireDealerScope);
+router.use((req, res, next) => {
+  const p = req.path || "";
+  if (p.startsWith("/cms/")) return requireModulePermission("cms")(req, res, next);
+  if (p.startsWith("/dms/reports")) return requireModulePermission("reports")(req, res, next);
+  if (p.startsWith("/dms/crm/")) return requireModulePermission("crm")(req, res, next);
+  if (p.startsWith("/dms/invoices") || p.startsWith("/dms/invoice-cancellations")) {
+    return requireModulePermission("invoicing")(req, res, next);
+  }
+  if (p.startsWith("/dms/payment-receipts") || p.startsWith("/dms/outstanding") || p.startsWith("/dms/accounts/")) {
+    return requireModulePermission("payments")(req, res, next);
+  }
+  if (
+    p.startsWith("/dms/inventory/") ||
+    p.startsWith("/dms/stock-receipts") ||
+    p.startsWith("/dms/purchase-orders") ||
+    p.startsWith("/dms/delivery/") ||
+    p.startsWith("/dms/service/") ||
+    p.startsWith("/dms/orders")
+  ) {
+    return requireModulePermission("inventory")(req, res, next);
+  }
+  if (p.startsWith("/dms/dashboard")) return requireModulePermission("dashboard")(req, res, next);
+  return next();
+});
 
 function dealerFilter(req: any) {
   return { dealerId: req.user.dealerId };
