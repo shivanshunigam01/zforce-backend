@@ -14,11 +14,17 @@ export async function resolveStorefront(req: Request, _res: Response, next: Next
       const [subdomain] = host.split(".");
       if (subdomain && subdomain !== "www") slug = subdomain;
     }
-    slug = slug || env.defaultStorefrontSlug;
+    slug = (slug || env.defaultStorefrontSlug).trim();
 
-    const storefront = await Storefront.findOne({ slug, isActive: true });
+    /** Try primary slug first, then common demo slugs so `patna-auto` / `hq` / env default stay in sync. */
+    const trySlugs = [...new Set([slug, env.defaultStorefrontSlug, "patna-auto", "hq"].filter((s) => Boolean(s && String(s).trim())))];
+    let storefront = null;
+    for (const s of trySlugs) {
+      storefront = await Storefront.findOne({ slug: String(s).trim(), isActive: true });
+      if (storefront) break;
+    }
     if (!storefront) {
-      throw new AppError(404, "STOREFRONT_NOT_FOUND", "Storefront not found", { slug });
+      throw new AppError(404, "STOREFRONT_NOT_FOUND", "Storefront not found", { tried: trySlugs });
     }
 
     req.storefront = storefront;

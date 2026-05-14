@@ -39,6 +39,10 @@ import ServiceJob from "../models/ServiceJob";
 import AccountEntry from "../models/AccountEntry";
 import ReportExportJob from "../models/ReportExportJob";
 import { AppError } from "../utils/errors";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { randomUUID } from "crypto";
 
 const router = Router();
 router.use(authJwt(["dealer", "super_admin", "ho_staff"]), requireDealerScope);
@@ -93,6 +97,35 @@ async function patchOne(req: any, res: any, Model: any, filter: any, payload: an
   if (!row) throw new AppError(404, "NOT_FOUND", "Resource not found");
   res.json({ data: toJSON(row) });
 }
+
+const brochureUploadDir = path.join(process.cwd(), "uploads", "product-brochures");
+const brochureStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    try {
+      fs.mkdirSync(brochureUploadDir, { recursive: true });
+      cb(null, brochureUploadDir);
+    } catch (e) {
+      cb(e as Error, brochureUploadDir);
+    }
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    const safeExt = ext === ".zip" ? ".zip" : ".pdf";
+    cb(null, `${String(req.params.id)}-${randomUUID()}${safeExt}`);
+  }
+});
+const brochureUpload = multer({
+  storage: brochureStorage,
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ok =
+      file.mimetype === "application/pdf" ||
+      file.mimetype === "application/zip" ||
+      file.mimetype === "application/x-zip-compressed";
+    if (!ok) return cb(new Error("Only PDF or ZIP files are allowed"));
+    cb(null, true);
+  }
+});
 
 router.post("/media/cloudinary/signature", async (req, res, next) => {
   try {
@@ -203,7 +236,8 @@ router.get("/cms/products", async (req, res, next) => {
 router.post("/cms/products", async (req, res, next) => {
   try {
     const sf = await dealerStorefront(req);
-    const row = await Product.create({ ...req.body, storefrontId: sf._id, dealerId: req.user!.dealerId, tenantId: req.user!.tenantId });
+    const { brochureFile: _ignoreBrochure, ...body } = req.body || {};
+    const row = await Product.create({ ...body, storefrontId: sf._id, dealerId: req.user!.dealerId, tenantId: req.user!.tenantId });
     res.status(201).json({ data: toJSON(row) });
   } catch (e) { next(e); }
 });
@@ -211,7 +245,62 @@ router.get("/cms/products/:id", async (req, res, next) => {
   try { await getOne(req, res, Product, { _id: req.params.id, ...dealerFilter(req), deletedAt: null }); } catch (e) { next(e); }
 });
 router.patch("/cms/products/:id", async (req, res, next) => {
-  try { await patchOne(req, res, Product, { _id: req.params.id, ...dealerFilter(req) }, req.body); } catch (e) { next(e); }
+  try {
+    const { brochureFile: _ignoreBrochure, ...body } = req.body || {};
+    await patchOne(req, res, Product, { _id: req.params.id, ...dealerFilter(req) }, body);
+  } catch (e) { next(e); }
+});
+router.post("/cms/products/:id/brochure", (req, res, next) => {
+  brochureUpload.single("brochure")(req, res, (err) => {
+    if (err) return next(err instanceof Error ? new AppError(400, "UPLOAD_ERROR", err.message) : err);
+    next();
+  });
+}, async (req, res, next) => {
+  try {
+    if (!req.file) throw new AppError(400, "BAD_REQUEST", "No file uploaded");
+    const sf = await dealerStorefront(req);
+    const row = await Product.findOne({ _id: req.params.id, ...dealerFilter(req), storefrontId: sf._id, deletedAt: null });
+    if (!row) {
+      try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+      throw new AppError(404, "NOT_FOUND", "Product not found");
+    }
+    const prev = row.brochureFile as { storedName?: string } | undefined;
+    if (prev?.storedName) {
+      const oldPath = path.join(brochureUploadDir, prev.storedName);
+      if (fs.existsSync(oldPath)) {
+        try { fs.unlinkSync(oldPath); } catch { /* ignore */ }
+      }
+    }
+    row.set("brochureFile", {
+      storedName: req.file.filename,
+      originalName: req.file.originalname || "brochure.pdf",
+      mimeType: req.file.mimetype || "application/pdf"
+    });
+    await row.save();
+    res.json({ data: toJSON(row) });
+  } catch (e) {
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+    }
+    next(e);
+  }
+});
+router.delete("/cms/products/:id/brochure", async (req, res, next) => {
+  try {
+    const sf = await dealerStorefront(req);
+    const row = await Product.findOne({ _id: req.params.id, ...dealerFilter(req), storefrontId: sf._id, deletedAt: null });
+    if (!row) throw new AppError(404, "NOT_FOUND", "Product not found");
+    const prev = row.brochureFile as { storedName?: string } | undefined;
+    if (prev?.storedName) {
+      const oldPath = path.join(brochureUploadDir, prev.storedName);
+      if (fs.existsSync(oldPath)) {
+        try { fs.unlinkSync(oldPath); } catch { /* ignore */ }
+      }
+    }
+    row.set("brochureFile", undefined);
+    await row.save();
+    res.json({ data: toJSON(row) });
+  } catch (e) { next(e); }
 });
 router.delete("/cms/products/:id", async (req, res, next) => {
   try { await patchOne(req, res, Product, { _id: req.params.id, ...dealerFilter(req) }, { deletedAt: new Date(), isActive: false }); } catch (e) { next(e); }

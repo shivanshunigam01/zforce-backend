@@ -23,6 +23,8 @@ import { AppError } from "../utils/errors";
 import CibilRequest from "../models/CibilRequest";
 import { maskPan, decryptSensitive } from "../utils/crypto";
 import { stripCibilRequestForPublic } from "../utils/cibilPublic";
+import path from "path";
+import fs from "fs";
 
 const router = Router();
 router.use(resolveStorefront);
@@ -77,6 +79,27 @@ router.get("/pages/products", async (req, res, next) => {
       Product.countDocuments(filter)
     ]);
     res.json(paginated(page, limit, total, rows.map(toJSON)));
+  } catch (e) { next(e); }
+});
+
+router.get("/pages/products/:slug/brochure", async (req, res, next) => {
+  try {
+    const slug = String(req.params.slug || "").trim();
+    if (!slug) throw new AppError(400, "BAD_REQUEST", "Missing slug");
+    const product = await Product.findOne({
+      storefrontId: req.storefront!._id,
+      slug,
+      isActive: true,
+      deletedAt: null
+    });
+    const bf = product?.brochureFile as { storedName?: string; originalName?: string; mimeType?: string } | undefined;
+    if (!bf?.storedName) throw new AppError(404, "NOT_FOUND", "Brochure not available for this product");
+    const filePath = path.join(process.cwd(), "uploads", "product-brochures", bf.storedName);
+    if (!fs.existsSync(filePath)) throw new AppError(404, "NOT_FOUND", "Brochure file missing on server");
+    const ext = path.extname(bf.storedName).toLowerCase() === ".zip" ? ".zip" : ".pdf";
+    res.setHeader("Content-Type", bf.mimeType || "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="zforce-${slug}${ext}"`);
+    res.sendFile(path.resolve(filePath));
   } catch (e) { next(e); }
 });
 

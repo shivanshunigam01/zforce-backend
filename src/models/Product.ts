@@ -16,7 +16,10 @@ const productSchema = new Schema({
   specs: { type: Schema.Types.Mixed, default: {} },
   pricePaise: { type: Number, default: 0 },
   isActive: { type: Boolean, default: true, index: true },
-  deletedAt: { type: Date, default: null }
+  deletedAt: { type: Date, default: null },
+  tags: { type: [String], default: [] },
+  /** { storedName, originalName, mimeType } — files under uploads/product-brochures */
+  brochureFile: { type: Schema.Types.Mixed, default: undefined },
 }, { timestamps: true });
 
 productSchema.index({ storefrontId: 1, slug: 1 }, { unique: true });

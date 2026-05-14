@@ -42,7 +42,7 @@ export const env = {
   razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || "",
   cibilFeePaise: Number(process.env.CIBIL_FEE_PAISE || 7900),
   panEncryptionSecret: required("PAN_ENCRYPTION_SECRET", "dev_pan_encryption_secret_32_chars"),
-  defaultStorefrontSlug: process.env.PUBLIC_STOREFRONT_DEFAULT_SLUG || "hq",
+  defaultStorefrontSlug: process.env.PUBLIC_STOREFRONT_DEFAULT_SLUG || "patna-auto",
   emailFrom: process.env.EMAIL_FROM || "no-reply@example.com",
   smtpHost: process.env.SMTP_HOST || "",
   smtpPort: Number(process.env.SMTP_PORT || 587),
