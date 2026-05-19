@@ -4,10 +4,8 @@ import { authJwt } from "../middleware/authJwt";
 import { resolveStorefront } from "../middleware/resolveStorefront";
 import { cibilRateLimit, publicFormsRateLimit } from "../middleware/rateLimit";
 import { validate } from "../middleware/validate";
-import { cibilConfirmSchema, cibilExperianPdfSchema, cibilFormSchema, cibilOrderSchema, contactSchema, dealerApplicationSchema, enquirySchema, financeSchema, jobApplicationSchema } from "../validators/public.validators";
+import { cibilConfirmSchema, cibilFormSchema, cibilOrderSchema, contactSchema, dealerApplicationSchema, enquirySchema, financeSchema, jobApplicationSchema } from "../validators/public.validators";
 import { createCibilOrder, confirmCibilPayment, submitCibilFromPaidDraft } from "../services/cibil.service";
-import { fetchExperianPdfLink } from "../services/surepass.service";
-import CibilDraft from "../models/CibilDraft";
 import Product from "../models/Product";
 import GalleryItem from "../models/GalleryItem";
 import Lead from "../models/Lead";
@@ -20,10 +18,9 @@ import Storefront from "../models/Storefront";
 import { getPagination } from "../utils/pagination";
 import { paginated, toJSON } from "../utils/api";
 import { AppError } from "../utils/errors";
-import CibilRequest from "../models/CibilRequest";
-import { maskPan, decryptSensitive } from "../utils/crypto";
+import { maskPan } from "../utils/crypto";
 import { stripCibilRequestForPublic } from "../utils/cibilPublic";
-import { publicCibilConfigView, resolveCibilPaymentConfig } from "../services/cibilPaymentConfig.service";
+import { publicCibilConfigView } from "../services/cibilPaymentConfig.service";
 import path from "path";
 import fs from "fs";
 
@@ -277,43 +274,6 @@ router.post("/cibil/confirm-payment", cibilRateLimit, validate(cibilConfirmSchem
   try {
     const request = await confirmCibilPayment(req.body);
     res.json({ data: { ...stripCibilRequestForPublic(request), panMasked: maskPan(undefined) } });
-  } catch (e) { next(e); }
-});
-
-/** After payment: fetch Experian PDF link via Surepass (same storefront + payment id). */
-router.post("/cibil/experian-pdf", cibilRateLimit, validate(cibilExperianPdfSchema), async (req, res, next) => {
-  try {
-    const row = await CibilRequest.findOne({
-      _id: req.body.cibilRequestId,
-      storefrontId: req.storefront!._id,
-      razorpayPaymentId: req.body.razorpay_payment_id
-    });
-    if (!row) throw new AppError(404, "NOT_FOUND", "CIBIL request not found for this storefront");
-    const draft = await CibilDraft.findById(row.draftId);
-    if (!draft) throw new AppError(404, "NOT_FOUND", "Draft not found");
-
-    let pan: string;
-    try {
-      pan = decryptSensitive(draft.panEncrypted);
-    } catch {
-      throw new AppError(500, "DECRYPT_FAILED", "Could not read PAN for PDF request");
-    }
-
-    const cfg = resolveCibilPaymentConfig(req.storefront!);
-    const pdf = await fetchExperianPdfLink(
-      {
-        name: row.name || draft.name,
-        mobile: row.phone || draft.phone,
-        pan
-      },
-      { baseUrl: cfg.surepassBaseUrl, token: cfg.surepassToken }
-    );
-    if (!pdf.ok) {
-      throw new AppError(pdf.status >= 400 && pdf.status < 600 ? pdf.status : 502, "SUREPASS_PDF", pdf.message);
-    }
-
-    await CibilRequest.updateOne({ _id: row._id }, { creditReportPdfUrl: pdf.creditReportLink });
-    res.json({ data: { creditReportLink: pdf.creditReportLink } });
   } catch (e) { next(e); }
 });
 

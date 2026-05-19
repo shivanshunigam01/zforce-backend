@@ -1,7 +1,6 @@
 import axios from "axios";
 import { env } from "../config/env";
 
-const JSON_PATH = "/api/v1/credit-report-experian/fetch-report";
 const PDF_PATH = "/api/v1/credit-report-experian/fetch-report-pdf";
 
 export function isSurepassConfigured(overrides?: { baseUrl?: string; token?: string }): boolean {
@@ -10,15 +9,11 @@ export function isSurepassConfigured(overrides?: { baseUrl?: string; token?: str
   return Boolean(token) && /^https?:\/\//i.test(baseUrl);
 }
 
-function resolveSurepassEndpoints(overrides?: { baseUrl?: string }) {
+function resolvePdfEndpoint(overrides?: { baseUrl?: string }) {
   const base = overrides?.baseUrl ?? env.surepassBaseUrl;
   const baseUrl = base.endsWith("/") ? base : `${base}/`;
-  return {
-    json: new URL(JSON_PATH, baseUrl).toString(),
-    pdf: new URL(PDF_PATH, baseUrl).toString()
-  };
+  return new URL(PDF_PATH, baseUrl).toString();
 }
-
 
 export type SurepassReportPayload = {
   name: string;
@@ -37,35 +32,36 @@ export function normalizePan(pan: string): string {
   return String(pan).trim().toUpperCase();
 }
 
-export type SurepassJsonResult = {
-  ok: true;
-  data: Record<string, unknown>;
-  creditScore: number | null;
-  reportNumber: string | null;
-  reportDate: string | null;
-  reportTime: string | null;
-};
+function parseCreditScore(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number(String(raw).trim());
+  return Number.isFinite(n) ? n : null;
+}
 
-export type SurepassError = {
-  ok: false;
-  status: number;
-  message: string;
-  details?: unknown;
-};
+export type SurepassPdfReportResult =
+  | {
+      ok: true;
+      creditScore: number | null;
+      creditReportLink: string;
+      clientId: string | null;
+      data: Record<string, unknown>;
+    }
+  | { ok: false; status: number; message: string; details?: unknown };
 
 /**
- * POST Experian JSON report (after payment is verified server-side).
+ * POST Experian credit report PDF (Surepass fetch-report-pdf).
+ * Returns credit score and a presigned PDF URL.
  */
-export async function fetchExperianJsonReport(
+export async function fetchExperianPdfReport(
   payload: SurepassReportPayload,
   overrides?: { baseUrl?: string; token?: string }
-): Promise<SurepassJsonResult | SurepassError> {
+): Promise<SurepassPdfReportResult> {
   if (!isSurepassConfigured(overrides)) {
     return { ok: false, status: 503, message: "Surepass is not configured (SUREPASS_TOKEN)" };
   }
 
   const token = overrides?.token ?? env.surepassToken;
-  const endpoints = resolveSurepassEndpoints(overrides);
+  const endpoint = resolvePdfEndpoint(overrides);
 
   const mobileStr = normalizeMobileForSurepass(payload.mobile);
   const panStr = normalizePan(payload.pan);
@@ -78,7 +74,7 @@ export async function fetchExperianJsonReport(
   }
 
   const spRes = await axios.post(
-    endpoints.json,
+    endpoint,
     {
       name: payload.name,
       consent: "Y",
@@ -90,82 +86,27 @@ export async function fetchExperianJsonReport(
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`
       },
-      timeout: 45_000,
+      timeout: 60_000,
       validateStatus: () => true
     }
   );
 
-  if (spRes.status < 200 || spRes.status >= 300) {
-    return {
-      ok: false,
-      status: spRes.status,
-      message: (spRes.data as { message?: string })?.message || "Surepass error",
-      details: spRes.data
-    };
-  }
-
-  const root = (spRes.data as { data?: Record<string, unknown> })?.data ?? {};
-  const creditReport = root.credit_report as Record<string, unknown> | undefined;
-  const header = creditReport?.CreditProfileHeader as Record<string, unknown> | undefined;
-
-  const creditScore =
-    typeof root.credit_score === "number"
-      ? root.credit_score
-      : root.credit_score != null
-        ? Number(root.credit_score)
-        : null;
-
-  return {
-    ok: true,
-    data: root as Record<string, unknown>,
-    creditScore: Number.isFinite(creditScore as number) ? (creditScore as number) : null,
-    reportNumber: (header?.ReportNumber as string) ?? null,
-    reportDate: (header?.ReportDate as string) ?? null,
-    reportTime: (header?.ReportTime as string) ?? null
+  const body = spRes.data as {
+    success?: boolean;
+    message?: string;
+    data?: Record<string, unknown>;
   };
-}
 
-export type SurepassPdfResult =
-  | { ok: true; creditReportLink: string }
-  | { ok: false; status: number; message: string; details?: unknown };
-
-export async function fetchExperianPdfLink(
-  payload: SurepassReportPayload,
-  overrides?: { baseUrl?: string; token?: string }
-): Promise<SurepassPdfResult> {
-  if (!isSurepassConfigured(overrides)) {
-    return { ok: false, status: 503, message: "Surepass is not configured" };
-  }
-
-  const token = overrides?.token ?? env.surepassToken;
-  const endpoints = resolveSurepassEndpoints(overrides);
-
-  const mobileStr = normalizeMobileForSurepass(payload.mobile);
-  const panStr = normalizePan(payload.pan);
-
-  const spRes = await axios.post(
-    endpoints.pdf,
-    { name: payload.name, consent: "Y", mobile: mobileStr, pan: panStr },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`
-      },
-      timeout: 30_000,
-      validateStatus: () => true
-    }
-  );
-
-  if (spRes.status < 200 || spRes.status >= 300) {
+  if (spRes.status < 200 || spRes.status >= 300 || body.success === false) {
     return {
       ok: false,
       status: spRes.status,
-      message: (spRes.data as { message?: string })?.message || "Surepass PDF error",
+      message: body.message || "Surepass PDF error",
       details: spRes.data
     };
   }
 
-  const d = (spRes.data as { data?: Record<string, unknown> })?.data ?? {};
+  const d = body.data ?? {};
   const link =
     (d.credit_report_link as string) ||
     (d.report_url as string) ||
@@ -175,5 +116,11 @@ export async function fetchExperianPdfLink(
     return { ok: false, status: 502, message: "No PDF link in Surepass response", details: spRes.data };
   }
 
-  return { ok: true, creditReportLink: link };
+  return {
+    ok: true,
+    creditScore: parseCreditScore(d.credit_score),
+    creditReportLink: link,
+    clientId: (d.client_id as string) ?? null,
+    data: d as Record<string, unknown>
+  };
 }

@@ -10,7 +10,7 @@ Production-oriented Node.js + Express + MongoDB backend scaffold for the ZForce 
 - Refresh token persistence
 - Public storefront resolution with `X-Storefront-Slug`
 - Razorpay CIBIL payment order + confirm + webhook idempotency
-- **Surepass** Experian JSON report after payment (`SUREPASS_TOKEN`); optional PDF link via `POST /public/cibil/experian-pdf`
+- **Surepass** Experian PDF report + credit score after payment (`SUREPASS_TOKEN`, `fetch-report-pdf`)
 - Cloudinary signed upload flow
 - Dealer CMS, inbox, and large DMS catalog
 - Distributor catalog under `/tenants/:tenantId/distributor/...`
@@ -56,9 +56,8 @@ http://localhost:4000/api/v1
 
 1. Call `POST /api/v1/public/cibil/payment-order` with `X-Storefront-Slug: patna-auto`
 2. Open Razorpay Checkout on frontend with returned `orderId` and `keyId`
-3. After success, call `POST /api/v1/public/cibil/confirm-payment` (server verifies Razorpay, then calls **Surepass** `fetch-report` with name / mobile / PAN from the draft)
+3. After success, call `POST /api/v1/public/cibil/confirm-payment` (server verifies Razorpay, then calls **Surepass** `fetch-report-pdf` with name / mobile / PAN; returns score + PDF URL)
 4. Webhook backup endpoint: `POST /api/v1/webhooks/razorpay`
-5. Optional PDF: `POST /api/v1/public/cibil/experian-pdf` with `{ "cibilRequestId", "razorpay_payment_id" }` and `X-Storefront-Slug`
 
 ## Cloudinary folder layout
 

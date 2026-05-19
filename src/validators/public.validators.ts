@@ -19,11 +19,6 @@ export const cibilFormSchema = z.object({
   cibilDraftId: z.string().min(8)
 });
 
-export const cibilExperianPdfSchema = z.object({
-  cibilRequestId: z.string().min(8),
-  razorpay_payment_id: z.string().min(8)
-});
-
 export const enquirySchema = z.object({
   name: z.string().min(2),
   phone: z.string().min(10),

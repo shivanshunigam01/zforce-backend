@@ -6,7 +6,7 @@ import { encryptSensitive, decryptSensitive } from "../utils/crypto";
 import { AppError } from "../utils/errors";
 import { isCibilPaymentReady, resolveCibilPaymentConfig } from "./cibilPaymentConfig.service";
 import { createRazorpayClient, verifyRazorpayPaymentSignature } from "./razorpay.service";
-import { fetchExperianJsonReport, isSurepassConfigured } from "./surepass.service";
+import { fetchExperianPdfReport, isSurepassConfigured } from "./surepass.service";
 
 export async function createCibilOrder(storefront: any, payload: any) {
   const cfg = resolveCibilPaymentConfig(storefront);
@@ -55,7 +55,7 @@ export async function createCibilOrder(storefront: any, payload: any) {
 }
 
 /**
- * After Razorpay is verified, pull Experian JSON via Surepass and persist on the request.
+ * After Razorpay is verified, pull Experian PDF + score via Surepass and persist on the request.
  */
 async function loadStorefrontForDraft(draft: { storefrontId?: unknown }) {
   if (!draft?.storefrontId) return null;
@@ -85,7 +85,7 @@ export async function attachSurepassReportToRequest(requestId: string, draft: an
     return;
   }
 
-  const sp = await fetchExperianJsonReport(
+  const sp = await fetchExperianPdfReport(
     {
       name: draft.name,
       mobile: draft.phone,
@@ -112,11 +112,9 @@ export async function attachSurepassReportToRequest(requestId: string, draft: an
       $set: {
         surepassStatus: "success",
         creditScore: sp.creditScore ?? undefined,
-        reportNumber: sp.reportNumber ?? undefined,
-        reportDate: sp.reportDate ?? undefined,
-        reportTime: sp.reportTime ?? undefined,
+        creditReportPdfUrl: sp.creditReportLink,
         surepassRaw: sp.data,
-        status: "pending_review"
+        status: "checked"
       },
       $unset: { surepassError: "" }
     }
