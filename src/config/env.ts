@@ -52,3 +52,11 @@ export const env = {
   surepassBaseUrl: (process.env.SUREPASS_BASE_URL || "https://kyc-api.surepass.io").trim(),
   surepassToken: (process.env.SUREPASS_TOKEN || "").trim()
 };
+
+export function isRazorpayConfigured(): boolean {
+  return Boolean(env.razorpayKeyId && env.razorpayKeySecret);
+}
+
+export function isSurepassConfiguredEnv(): boolean {
+  return Boolean(env.surepassToken) && /^https?:\/\//i.test(env.surepassBaseUrl);
+}

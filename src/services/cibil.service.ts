@@ -1,18 +1,26 @@
 import CibilDraft from "../models/CibilDraft";
 import CibilRequest from "../models/CibilRequest";
 import RazorpayEvent from "../models/RazorpayEvent";
-import { env } from "../config/env";
+import Storefront from "../models/Storefront";
 import { encryptSensitive, decryptSensitive } from "../utils/crypto";
 import { AppError } from "../utils/errors";
-import { razorpay, verifyRazorpayPaymentSignature } from "./razorpay.service";
-import {
-  fetchExperianJsonReport,
-  isSurepassConfigured
-} from "./surepass.service";
+import { isCibilPaymentReady, resolveCibilPaymentConfig } from "./cibilPaymentConfig.service";
+import { createRazorpayClient, verifyRazorpayPaymentSignature } from "./razorpay.service";
+import { fetchExperianJsonReport, isSurepassConfigured } from "./surepass.service";
 
 export async function createCibilOrder(storefront: any, payload: any) {
-  const order = await razorpay.orders.create({
-    amount: env.cibilFeePaise,
+  const cfg = resolveCibilPaymentConfig(storefront);
+  if (!isCibilPaymentReady(cfg)) {
+    throw new AppError(
+      503,
+      "PAYMENT_NOT_CONFIGURED",
+      "CIBIL payment is not configured. Set Razorpay keys in Admin → CIBIL payment setup."
+    );
+  }
+
+  const rzp = createRazorpayClient(cfg.razorpayKeyId, cfg.razorpayKeySecret);
+  const order = await rzp.orders.create({
+    amount: cfg.feePaise,
     currency: "INR",
     receipt: `cibil_${Date.now()}`
   });
@@ -28,15 +36,15 @@ export async function createCibilOrder(storefront: any, payload: any) {
     consent: payload.consent,
     paymentStatus: "created",
     razorpayOrderId: order.id,
-    amountPaise: env.cibilFeePaise,
+    amountPaise: cfg.feePaise,
     expiresAt: new Date(Date.now() + 30 * 60 * 1000)
   });
 
   return {
     orderId: order.id,
-    amountPaise: env.cibilFeePaise,
+    amountPaise: cfg.feePaise,
     currency: "INR",
-    keyId: env.razorpayKeyId,
+    keyId: cfg.razorpayKeyId,
     prefill: {
       name: payload.name,
       email: payload.email,
@@ -49,11 +57,19 @@ export async function createCibilOrder(storefront: any, payload: any) {
 /**
  * After Razorpay is verified, pull Experian JSON via Surepass and persist on the request.
  */
+async function loadStorefrontForDraft(draft: { storefrontId?: unknown }) {
+  if (!draft?.storefrontId) return null;
+  return Storefront.findById(draft.storefrontId);
+}
+
 export async function attachSurepassReportToRequest(requestId: string, draft: any): Promise<void> {
-  if (!isSurepassConfigured()) {
+  const storefront = await loadStorefrontForDraft(draft);
+  const cfg = resolveCibilPaymentConfig(storefront || {});
+
+  if (!isSurepassConfigured({ baseUrl: cfg.surepassBaseUrl, token: cfg.surepassToken })) {
     await CibilRequest.updateOne(
       { _id: requestId },
-      { surepassStatus: "skipped", surepassError: "SUREPASS_TOKEN not set" }
+      { surepassStatus: "skipped", surepassError: "Surepass is not configured" }
     );
     return;
   }
@@ -69,11 +85,14 @@ export async function attachSurepassReportToRequest(requestId: string, draft: an
     return;
   }
 
-  const sp = await fetchExperianJsonReport({
-    name: draft.name,
-    mobile: draft.phone,
-    pan
-  });
+  const sp = await fetchExperianJsonReport(
+    {
+      name: draft.name,
+      mobile: draft.phone,
+      pan
+    },
+    { baseUrl: cfg.surepassBaseUrl, token: cfg.surepassToken }
+  );
 
   if (!sp.ok) {
     await CibilRequest.updateOne(
@@ -112,10 +131,14 @@ export async function confirmCibilPayment(input: any) {
     return existing;
   }
 
+  const storefront = await loadStorefrontForDraft(draft);
+  const cfg = resolveCibilPaymentConfig(storefront || {});
+
   const isValid = verifyRazorpayPaymentSignature(
     input.razorpay_order_id,
     input.razorpay_payment_id,
-    input.razorpay_signature
+    input.razorpay_signature,
+    cfg.razorpayKeySecret
   );
   if (!isValid) throw new AppError(400, "INVALID_PAYMENT_SIGNATURE", "Razorpay signature verification failed");
 

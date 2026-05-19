@@ -3,6 +3,14 @@ import { Router } from "express";
 import { authJwt, requireDealerScope } from "../middleware/authJwt";
 import { requireModulePermission } from "../middleware/panelPermissions";
 import { buildSignedUploadParams } from "../services/cloudinary.service";
+import { buildDefaultHeroForDealer } from "../services/heroCms.service";
+import { buildDefaultFeaturesForDealer } from "../services/featuresCms.service";
+import { syncShowcaseProductsForDealer } from "../services/productsCms.service";
+import { syncDefaultGalleryForDealer } from "../services/galleryCms.service";
+import {
+  cibilPaymentAdminView,
+  mergeCibilPaymentUpdate
+} from "../services/cibilPaymentConfig.service";
 import { getPagination } from "../utils/pagination";
 import { paginated, toJSON } from "../utils/api";
 import Storefront from "../models/Storefront";
@@ -187,6 +195,56 @@ Object.entries(homeSectionMap).forEach(([pathKey, dataKey]) => {
   });
 });
 
+router.post("/cms/home/hero/seed-default", async (req, res, next) => {
+  try {
+    const dealerId = req.user!.dealerId;
+    if (!dealerId) throw new AppError(403, "FORBIDDEN", "Dealer scope missing");
+    const storefronts = await Storefront.find({ dealerId });
+    if (!storefronts.length) throw new AppError(404, "STOREFRONT_NOT_FOUND", "Storefront missing");
+    const hero = await buildDefaultHeroForDealer(dealerId);
+    for (const sf of storefronts) {
+      sf.homeSections = { ...(sf.homeSections || {}), hero };
+      await sf.save();
+    }
+    res.json({ data: hero });
+  } catch (e) { next(e); }
+});
+
+router.get("/cms/cibil-payment", async (req, res, next) => {
+  try {
+    const sf = await dealerStorefront(req);
+    res.json({ data: cibilPaymentAdminView(sf) });
+  } catch (e) { next(e); }
+});
+
+router.put("/cms/cibil-payment", async (req, res, next) => {
+  try {
+    const sf = await Storefront.findOne({ dealerId: req.user!.dealerId });
+    if (!sf) throw new AppError(404, "STOREFRONT_NOT_FOUND", "Storefront missing");
+    const existing = (sf.cibilPayment && typeof sf.cibilPayment === "object"
+      ? sf.cibilPayment
+      : {}) as Record<string, unknown>;
+    try {
+      sf.cibilPayment = mergeCibilPaymentUpdate(existing as any, req.body || {});
+    } catch (err) {
+      throw new AppError(400, "BAD_REQUEST", err instanceof Error ? err.message : "Invalid CIBIL payment settings");
+    }
+    await sf.save();
+    res.json({ data: cibilPaymentAdminView(sf) });
+  } catch (e) { next(e); }
+});
+
+router.post("/cms/home/features/seed-default", async (req, res, next) => {
+  try {
+    const sf = await Storefront.findOne({ dealerId: req.user!.dealerId });
+    if (!sf) throw new AppError(404, "STOREFRONT_NOT_FOUND", "Storefront missing");
+    const features = await buildDefaultFeaturesForDealer(req.user!.dealerId);
+    sf.homeSections = { ...(sf.homeSections || {}), features };
+    await sf.save();
+    res.json({ data: features });
+  } catch (e) { next(e); }
+});
+
 router.get("/cms/site-settings", async (req, res, next) => {
   try { const sf = await dealerStorefront(req); res.json({ data: sf.siteSettings || {} }); } catch (e) { next(e); }
 });
@@ -232,6 +290,14 @@ router.put("/cms/footer", async (req, res, next) => {
 
 router.get("/cms/products", async (req, res, next) => {
   try { await list(req, res, Product, { ...dealerFilter(req), deletedAt: null }); } catch (e) { next(e); }
+});
+router.post("/cms/products/sync-showcase", async (req, res, next) => {
+  try {
+    const dealerId = req.user!.dealerId;
+    if (!dealerId) throw new AppError(403, "FORBIDDEN", "Dealer scope missing");
+    const result = await syncShowcaseProductsForDealer(dealerId, req.user!.tenantId);
+    res.json({ data: result });
+  } catch (e) { next(e); }
 });
 router.post("/cms/products", async (req, res, next) => {
   try {
@@ -308,6 +374,14 @@ router.delete("/cms/products/:id", async (req, res, next) => {
 
 router.get("/cms/gallery", async (req, res, next) => {
   try { await list(req, res, GalleryItem, { ...dealerFilter(req), deletedAt: null }); } catch (e) { next(e); }
+});
+router.post("/cms/gallery/sync-default", async (req, res, next) => {
+  try {
+    const dealerId = req.user!.dealerId;
+    if (!dealerId) throw new AppError(403, "FORBIDDEN", "Dealer scope missing");
+    const result = await syncDefaultGalleryForDealer(dealerId, req.user!.tenantId);
+    res.json({ data: result });
+  } catch (e) { next(e); }
 });
 router.post("/cms/gallery", async (req, res, next) => {
   try {

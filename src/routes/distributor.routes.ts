@@ -142,6 +142,17 @@ router.delete("/masters/areas/:id/dealers/:dealerId", async (req, res, next) => 
 router.get("/dealers", async (req, res, next) => {
   try { await list(req, res, Storefront, tenantFilter(req)); } catch (e) { next(e); }
 });
+router.get("/dealers/performance", async (req, res, next) => {
+  try {
+    const dealers = await Storefront.find(tenantFilter(req)).select("dealerId dealerName");
+    const data = await Promise.all(dealers.map(async (d: any) => ({
+      dealerId: d.dealerId,
+      dealerName: d.dealerName,
+      orderCount: await B2BOrder.countDocuments({ tenantId: req.params.tenantId, dealerId: d.dealerId })
+    })));
+    res.json({ data });
+  } catch (e) { next(e); }
+});
 router.post("/dealers", async (req, res, next) => {
   try {
     const row = await Storefront.create({ ...req.body, tenantId: req.params.tenantId });
@@ -168,20 +179,50 @@ router.post("/dealers/:dealerId/panel-access", async (req, res, next) => {
 
 router.get("/dealer-applications", async (req, res, next) => { try { await list(req, res, DealerApplication, tenantFilter(req)); } catch (e) { next(e); } });
 router.get("/dealer-applications/:id", async (req, res, next) => { try { await getOne(req, res, DealerApplication, { _id: req.params.id, ...tenantFilter(req) }); } catch (e) { next(e); } });
-router.post("/dealer-applications/:id/approve", async (req, res, next) => { try { await patchOne(req, res, DealerApplication, { _id: req.params.id, ...tenantFilter(req) }, { status: "approved" }); } catch (e) { next(e); } });
-router.post("/dealer-applications/:id/reject", async (req, res, next) => { try { await patchOne(req, res, DealerApplication, { _id: req.params.id, ...tenantFilter(req) }, { status: "rejected" }); } catch (e) { next(e); } });
-
-router.get("/dealers/performance", async (req, res, next) => {
+router.post("/dealer-applications/:id/approve", async (req, res, next) => {
   try {
-    const dealers = await Storefront.find(tenantFilter(req)).select("dealerId dealerName");
-    const data = await Promise.all(dealers.map(async (d: any) => ({
-      dealerId: d.dealerId,
-      dealerName: d.dealerName,
-      orderCount: await B2BOrder.countDocuments({ tenantId: req.params.tenantId, dealerId: d.dealerId })
-    })));
-    res.json({ data });
+    const app = await DealerApplication.findOne({ _id: req.params.id, ...tenantFilter(req) });
+    if (!app) throw new AppError(404, "NOT_FOUND", "Application not found");
+    const pl = (app.payload && typeof app.payload === "object" ? app.payload : {}) as Record<string, string>;
+    const name = String(app.companyName || pl.name || pl.businessName || "New Dealer").trim();
+    let dealerId = String(app.dealerId || "").trim();
+    if (!dealerId) {
+      const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "dealer";
+      dealerId = `${base}-${Date.now().toString(36)}`;
+    }
+    let sf = await Storefront.findOne({ dealerId, tenantId: req.params.tenantId });
+    if (!sf) {
+      const slugBase = dealerId.replace(/_/g, "-");
+      let slug = slugBase;
+      let n = 0;
+      while (await Storefront.findOne({ slug })) {
+        n += 1;
+        slug = `${slugBase}-${n}`;
+      }
+      sf = await Storefront.create({
+        tenantId: req.params.tenantId,
+        dealerId,
+        slug,
+        dealerName: name,
+        isActive: true,
+        siteSettings: {
+          phone: app.phone || pl.phone || "",
+          email: app.email || pl.email || "",
+          address: app.district || pl.district || ""
+        }
+      });
+    }
+    app.status = "approved";
+    app.dealerId = dealerId;
+    app.storefrontId = sf._id;
+    await app.save();
+    res.json({ data: toJSON(app), storefront: toJSON(sf) });
   } catch (e) { next(e); }
 });
+router.post("/dealer-applications/:id/reject", async (req, res, next) => {
+  try { await patchOne(req, res, DealerApplication, { _id: req.params.id, ...tenantFilter(req) }, { status: "rejected" }); } catch (e) { next(e); }
+});
+
 router.get("/dealers/:dealerId/performance", async (req, res, next) => {
   try {
     const dealerId = req.params.dealerId;
@@ -201,11 +242,25 @@ router.post("/crm/leads/:id/push-to-dealer", async (req, res, next) => {
 registerCrud("/crm/activities", Activity);
 registerCrud("/crm/visits", Visit);
 
+/** Static paths before registerCrud `/:orderNo` or GET /b2b-orders/:orderNo shadows "pending". */
+router.get("/b2b-orders/pending", async (req, res, next) => {
+  try {
+    await list(req, res, B2BOrder, { ...tenantFilter(req), status: { $in: ["Draft", "Submitted", "Pending"] } });
+  } catch (e) { next(e); }
+});
+router.patch("/b2b-orders/pending/:orderNo/priority", async (req, res, next) => {
+  try {
+    await patchOne(req, res, B2BOrder, { orderNo: req.params.orderNo, ...tenantFilter(req) }, { priority: req.body.priority });
+  } catch (e) { next(e); }
+});
+
 registerCrud("/b2b-orders", B2BOrder, { codeField: "orderNo" });
-router.post("/b2b-orders/:orderNo/confirm", async (req, res, next) => { try { await patchOne(req, res, B2BOrder, { orderNo: req.params.orderNo, ...tenantFilter(req) }, { status: "Confirmed" }); } catch (e) { next(e); } });
-router.post("/b2b-orders/:orderNo/status", async (req, res, next) => { try { await patchOne(req, res, B2BOrder, { orderNo: req.params.orderNo, ...tenantFilter(req) }, { status: req.body.status }); } catch (e) { next(e); } });
-router.get("/b2b-orders/pending", async (req, res, next) => { try { await list(req, res, B2BOrder, { ...tenantFilter(req), status: { $in: ["Draft","Submitted","Pending"] } }); } catch (e) { next(e); } });
-router.patch("/b2b-orders/pending/:orderNo/priority", async (req, res, next) => { try { await patchOne(req, res, B2BOrder, { orderNo: req.params.orderNo, ...tenantFilter(req) }, { priority: req.body.priority }); } catch (e) { next(e); } });
+router.post("/b2b-orders/:orderNo/confirm", async (req, res, next) => {
+  try { await patchOne(req, res, B2BOrder, { orderNo: req.params.orderNo, ...tenantFilter(req) }, { status: "Confirmed" }); } catch (e) { next(e); }
+});
+router.post("/b2b-orders/:orderNo/status", async (req, res, next) => {
+  try { await patchOne(req, res, B2BOrder, { orderNo: req.params.orderNo, ...tenantFilter(req) }, { status: req.body.status }); } catch (e) { next(e); }
+});
 
 registerCrud("/dispatches", Dispatch, { codeField: "dispatchId" });
 

@@ -4,7 +4,7 @@ import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
-import { env } from "./config/env";
+import { env, isRazorpayConfigured, isSurepassConfiguredEnv } from "./config/env";
 import { AppError } from "./utils/errors";
 import { connectDb } from "./db/mongoose";
 import { requestId } from "./middleware/requestId";
@@ -55,6 +55,11 @@ connectDb()
   .then(() => {
     app.listen(env.port, () => {
       console.log(`ZForce API listening on port ${env.port}`);
+      console.log(
+        `CIBIL: Razorpay ${isRazorpayConfigured() ? "ready" : "MISSING keys"} · Surepass ${
+          isSurepassConfiguredEnv() ? "ready" : "MISSING token"
+        } · fee ₹${env.cibilFeePaise / 100}`
+      );
     });
   })
   .catch((error) => {

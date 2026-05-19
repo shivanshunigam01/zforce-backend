@@ -33,6 +33,8 @@ const storefrontSchema = new Schema({
   homeSections: { type: Schema.Types.Mixed, default: {} },
   pageContent: { type: Schema.Types.Mixed, default: {} },
   floatingCta: { type: Schema.Types.Mixed, default: {} },
+  /** Razorpay + Surepass + fee for public CIBIL check (per storefront). */
+  cibilPayment: { type: Schema.Types.Mixed, default: {} },
   i18n: { type: Schema.Types.Mixed, default: {} },
   seo: { type: Schema.Types.Mixed, default: {} },
   isActive: { type: Boolean, default: true }

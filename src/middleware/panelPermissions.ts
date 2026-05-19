@@ -19,7 +19,7 @@ export type ModulePermission =
 function defaultModuleAccess(role: string, module: ModulePermission): boolean {
   if (role === "super_admin" || role === "ho_staff") return true;
   if (role === "dealer") {
-    return !["dealer_management", "account_management", "user_management", "master_management", "hr", "cms", "settings"].includes(module);
+    return !["dealer_management", "account_management", "user_management", "master_management", "hr", "settings"].includes(module);
   }
   if (role === "distributor") {
     return !["account_management", "user_management", "hr", "settings"].includes(module);

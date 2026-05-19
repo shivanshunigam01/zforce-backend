@@ -4,17 +4,21 @@ import { env } from "../config/env";
 const JSON_PATH = "/api/v1/credit-report-experian/fetch-report";
 const PDF_PATH = "/api/v1/credit-report-experian/fetch-report-pdf";
 
-export function isSurepassConfigured(): boolean {
-  return Boolean(env.surepassToken) && /^https?:\/\//i.test(env.surepassBaseUrl);
+export function isSurepassConfigured(overrides?: { baseUrl?: string; token?: string }): boolean {
+  const baseUrl = overrides?.baseUrl ?? env.surepassBaseUrl;
+  const token = overrides?.token ?? env.surepassToken;
+  return Boolean(token) && /^https?:\/\//i.test(baseUrl);
 }
 
-function jsonEndpoint(): string {
-  return new URL(JSON_PATH, env.surepassBaseUrl.endsWith("/") ? env.surepassBaseUrl : `${env.surepassBaseUrl}/`).toString();
+function resolveSurepassEndpoints(overrides?: { baseUrl?: string }) {
+  const base = overrides?.baseUrl ?? env.surepassBaseUrl;
+  const baseUrl = base.endsWith("/") ? base : `${base}/`;
+  return {
+    json: new URL(JSON_PATH, baseUrl).toString(),
+    pdf: new URL(PDF_PATH, baseUrl).toString()
+  };
 }
 
-function pdfEndpoint(): string {
-  return new URL(PDF_PATH, env.surepassBaseUrl.endsWith("/") ? env.surepassBaseUrl : `${env.surepassBaseUrl}/`).toString();
-}
 
 export type SurepassReportPayload = {
   name: string;
@@ -53,11 +57,15 @@ export type SurepassError = {
  * POST Experian JSON report (after payment is verified server-side).
  */
 export async function fetchExperianJsonReport(
-  payload: SurepassReportPayload
+  payload: SurepassReportPayload,
+  overrides?: { baseUrl?: string; token?: string }
 ): Promise<SurepassJsonResult | SurepassError> {
-  if (!isSurepassConfigured()) {
+  if (!isSurepassConfigured(overrides)) {
     return { ok: false, status: 503, message: "Surepass is not configured (SUREPASS_TOKEN)" };
   }
+
+  const token = overrides?.token ?? env.surepassToken;
+  const endpoints = resolveSurepassEndpoints(overrides);
 
   const mobileStr = normalizeMobileForSurepass(payload.mobile);
   const panStr = normalizePan(payload.pan);
@@ -70,7 +78,7 @@ export async function fetchExperianJsonReport(
   }
 
   const spRes = await axios.post(
-    jsonEndpoint(),
+    endpoints.json,
     {
       name: payload.name,
       consent: "Y",
@@ -80,7 +88,7 @@ export async function fetchExperianJsonReport(
     {
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${env.surepassToken}`
+        Authorization: `Bearer ${token}`
       },
       timeout: 45_000,
       validateStatus: () => true
@@ -121,21 +129,27 @@ export type SurepassPdfResult =
   | { ok: true; creditReportLink: string }
   | { ok: false; status: number; message: string; details?: unknown };
 
-export async function fetchExperianPdfLink(payload: SurepassReportPayload): Promise<SurepassPdfResult> {
-  if (!isSurepassConfigured()) {
+export async function fetchExperianPdfLink(
+  payload: SurepassReportPayload,
+  overrides?: { baseUrl?: string; token?: string }
+): Promise<SurepassPdfResult> {
+  if (!isSurepassConfigured(overrides)) {
     return { ok: false, status: 503, message: "Surepass is not configured" };
   }
+
+  const token = overrides?.token ?? env.surepassToken;
+  const endpoints = resolveSurepassEndpoints(overrides);
 
   const mobileStr = normalizeMobileForSurepass(payload.mobile);
   const panStr = normalizePan(payload.pan);
 
   const spRes = await axios.post(
-    pdfEndpoint(),
+    endpoints.pdf,
     { name: payload.name, consent: "Y", mobile: mobileStr, pan: panStr },
     {
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${env.surepassToken}`
+        Authorization: `Bearer ${token}`
       },
       timeout: 30_000,
       validateStatus: () => true

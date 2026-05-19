@@ -1,9 +1,10 @@
 import { connectDb } from "../db/mongoose";
 import { hashPassword } from "../utils/auth";
+import { env } from "../config/env";
 import Tenant from "../models/Tenant";
 import Storefront from "../models/Storefront";
 import User from "../models/User";
-import Product from "../models/Product";
+import { buildDefaultHeroForDealer } from "../services/heroCms.service";
 
 async function main() {
   await connectDb();
@@ -57,100 +58,8 @@ async function main() {
     );
   }
 
-  const showcase = [
-      {
-        slug: "zforce-standard",
-        name: "ZForce Standard",
-        nameHi: "ZForce स्टैंडर्ड",
-        shortDescription: "Reliable performance for daily earnings.",
-        description:
-          "Reliable performance for daily earnings. Built for Bihar roads with proven lead-acid power and comfortable seating.",
-        descriptionHi:
-          "रोज़ाना कमाई के लिए भरोसेमंद प्रदर्शन। सिद्ध लीड-एसिड पावर और आरामदायक सीटों के साथ बिहार की सड़कों के लिए बनाया गया।",
-        images: [],
-        featureImages: [],
-        specs: {
-          battery: "100Ah Lead Acid",
-          range: "80-100 km",
-          capacity: "4+1 Passengers",
-          warranty: "1 Year",
-          motor: "1000W BLDC",
-          speed: "25 km/h",
-          charging: "6-8 hours",
-        },
-        pricePaise: 0,
-        isActive: true,
-        deletedAt: null,
-      },
-      {
-        slug: "zforce-premium",
-        name: "ZForce Premium",
-        nameHi: "ZForce प्रीमियम",
-        shortDescription: "Enhanced comfort with premium features.",
-        description:
-          "Enhanced comfort with premium features — stronger motor, upgraded cabin touches, and the same dependable ZForce DNA.",
-        descriptionHi:
-          "प्रीमियम फीचर्स के साथ बेहतर आराम — मजबूत मोटर, अपग्रेडेड केबिन और वही भरोसेमंद ZForce डीएनए।",
-        images: [],
-        featureImages: [],
-        specs: {
-          battery: "100Ah Lead Acid",
-          range: "90-110 km",
-          capacity: "4+1 Passengers",
-          warranty: "1 Year",
-          motor: "1200W BLDC",
-          speed: "25 km/h",
-          charging: "6-8 hours",
-        },
-        pricePaise: 0,
-        isActive: true,
-        deletedAt: null,
-      },
-      {
-        slug: "zforce-lithium",
-        name: "ZForce Lithium",
-        nameHi: "ZForce लिथियम",
-        shortDescription: "Maximum range with lithium power.",
-        description:
-          "Maximum range with lithium power — faster charging, longer battery life, and lightweight design for serious daily mileage.",
-        descriptionHi:
-          "लिथियम पावर के साथ अधिकतम रेंज — तेज़ चार्जिंग, लंबी बैटरी लाइफ, और रोज़ाना लंबी दूरी के लिए हल्का डिज़ाइन।",
-        images: [],
-        featureImages: [],
-        specs: {
-          battery: "60Ah Lithium",
-          range: "120-150 km",
-          capacity: "4+1 Passengers",
-          warranty: "2 Years",
-          motor: "1200W BLDC",
-          speed: "25 km/h",
-          charging: "3-4 hours",
-        },
-        pricePaise: 0,
-        isActive: true,
-        deletedAt: null,
-      },
-  ];
-
-  for (const slug of ["patna-auto", "hq"]) {
-    const sf = await Storefront.findOne({ slug });
-    if (!sf) continue;
-    for (const row of showcase) {
-      await Product.findOneAndUpdate(
-        { storefrontId: sf._id, slug: row.slug },
-        {
-          $set: {
-            storefrontId: sf._id,
-            tenantId: "tenant-demo",
-            dealerId: "dealer-demo",
-            category: "vehicle",
-            ...row,
-          },
-        },
-        { upsert: true }
-      );
-    }
-  }
+  const { syncShowcaseProductsForDealer } = await import("../services/productsCms.service");
+  await syncShowcaseProductsForDealer("dealer-demo", "tenant-demo");
 
   const passwordHash = await hashPassword("Password@123");
 
@@ -169,6 +78,26 @@ async function main() {
     { userId: "dealer", email: "dealer@example.com", displayName: "Dealer User", passwordHash, role: "dealer", tenantId: "tenant-demo", dealerId: "dealer-demo", branchIds: ["branch-1"], isActive: true },
     { upsert: true, new: true }
   );
+
+  if (env.cloudinaryCloudName && env.cloudinaryApiKey && env.cloudinaryApiSecret) {
+    console.log("Uploading default hero slides to Cloudinary (dealer-demo)…");
+    const hero = await buildDefaultHeroForDealer("dealer-demo");
+    const heroStorefronts = await Storefront.find({ dealerId: "dealer-demo" });
+    for (const sf of heroStorefronts) {
+      sf.homeSections = { ...(sf.homeSections || {}), hero };
+      await sf.save();
+      console.log(`  Hero CMS saved on storefront "${sf.slug}" (${hero.slides.length} slides)`);
+    }
+    try {
+      const { syncDefaultGalleryForDealer } = await import("../services/galleryCms.service");
+      const gal = await syncDefaultGalleryForDealer("dealer-demo", "tenant-demo");
+      console.log(`  Gallery: ${gal.ids.length} images on ${gal.storefrontCount} storefront(s)`);
+    } catch (e) {
+      console.warn("  Gallery seed failed:", e instanceof Error ? e.message : e);
+    }
+  } else {
+    console.warn("Skipping hero/gallery CMS seed: set CLOUDINARY_* in backend/.env");
+  }
 
   console.log("Seed complete");
   process.exit(0);

@@ -9,8 +9,10 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/app.js",
     "seed": "ts-node --transpile-only src/scripts/seed.ts",
+    "seed:hero": "ts-node --transpile-only src/scripts/seed-hero.ts",
     "clear-db": "ts-node --transpile-only src/scripts/clear-db.ts",
-    "reset-db": "npm run clear-db && npm run seed"
+    "reset-db": "npm run clear-db && npm run seed",
+    "test:panels": "ts-node --transpile-only src/scripts/smoke-panels.ts"
   },
   "dependencies": {
     "axios": "^1.7.9",

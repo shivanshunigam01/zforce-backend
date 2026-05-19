@@ -23,6 +23,7 @@ import { AppError } from "../utils/errors";
 import CibilRequest from "../models/CibilRequest";
 import { maskPan, decryptSensitive } from "../utils/crypto";
 import { stripCibilRequestForPublic } from "../utils/cibilPublic";
+import { publicCibilConfigView, resolveCibilPaymentConfig } from "../services/cibilPaymentConfig.service";
 import path from "path";
 import fs from "fs";
 
@@ -218,11 +219,25 @@ router.post("/forms/contact", publicFormsRateLimit, validate(contactSchema), asy
 
 router.post("/forms/become-dealer", publicFormsRateLimit, validate(dealerApplicationSchema), async (req, res, next) => {
   try {
+    const body = req.body as Record<string, unknown>;
+    const extra = (body.payload && typeof body.payload === "object" ? body.payload : {}) as Record<string, unknown>;
     const row = await DealerApplication.create({
       storefrontId: req.storefront!._id,
       tenantId: req.storefront!.tenantId,
       dealerId: req.storefront!.dealerId,
-      ...req.body
+      status: "new",
+      companyName: body.companyName,
+      ownerName: body.ownerName,
+      phone: body.phone,
+      email: body.email,
+      district: body.district,
+      payload: {
+        ...extra,
+        source: "become-dealer",
+        formPath: "/become-dealer",
+        name: body.ownerName,
+        businessName: body.companyName,
+      },
     });
     res.status(201).json({ data: toJSON(row) });
   } catch (e) { next(e); }
@@ -245,6 +260,10 @@ router.post("/forms/cibil", cibilRateLimit, validate(cibilFormSchema), async (re
     const request = await submitCibilFromPaidDraft(req.body);
     res.status(201).json({ data: { ...stripCibilRequestForPublic(request), panMasked: maskPan(undefined) } });
   } catch (e) { next(e); }
+});
+
+router.get("/cibil/config", async (req, res) => {
+  res.json({ data: publicCibilConfigView(req.storefront!) });
 });
 
 router.post("/cibil/payment-order", cibilRateLimit, validate(cibilOrderSchema), async (req, res, next) => {
@@ -280,11 +299,15 @@ router.post("/cibil/experian-pdf", cibilRateLimit, validate(cibilExperianPdfSche
       throw new AppError(500, "DECRYPT_FAILED", "Could not read PAN for PDF request");
     }
 
-    const pdf = await fetchExperianPdfLink({
-      name: row.name || draft.name,
-      mobile: row.phone || draft.phone,
-      pan
-    });
+    const cfg = resolveCibilPaymentConfig(req.storefront!);
+    const pdf = await fetchExperianPdfLink(
+      {
+        name: row.name || draft.name,
+        mobile: row.phone || draft.phone,
+        pan
+      },
+      { baseUrl: cfg.surepassBaseUrl, token: cfg.surepassToken }
+    );
     if (!pdf.ok) {
       throw new AppError(pdf.status >= 400 && pdf.status < 600 ? pdf.status : 502, "SUREPASS_PDF", pdf.message);
     }

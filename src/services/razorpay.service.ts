@@ -7,9 +7,19 @@ export const razorpay = new Razorpay({
   key_secret: env.razorpayKeySecret
 });
 
-export function verifyRazorpayPaymentSignature(orderId: string, paymentId: string, signature: string): boolean {
+export function createRazorpayClient(keyId: string, keySecret: string) {
+  return new Razorpay({ key_id: keyId, key_secret: keySecret });
+}
+
+export function verifyRazorpayPaymentSignature(
+  orderId: string,
+  paymentId: string,
+  signature: string,
+  keySecret: string = env.razorpayKeySecret
+): boolean {
+  if (!keySecret) return false;
   const generated = crypto
-    .createHmac("sha256", env.razorpayKeySecret)
+    .createHmac("sha256", keySecret)
     .update(`${orderId}|${paymentId}`)
     .digest("hex");
   return generated === signature;
