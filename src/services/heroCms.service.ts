@@ -20,8 +20,9 @@ const SLIDE_FILES = [
   { id: "hero-passenger", sortOrder: 1, file: "hero-slide-passenger.png" },
   { id: "hero-black", sortOrder: 2, file: "hero-slide-black.png" },
   { id: "hero-red-scenic", sortOrder: 3, file: "hero-slide-red-scenic.png" },
-  { id: "hero-school", sortOrder: 4, file: "hero-slide-school.png" },
-  { id: "hero-cargo", sortOrder: 5, file: "hero-slide-cargo.png" },
+  { id: "hero-red-yellow-cargo", sortOrder: 4, file: "hero-slide-red-yellow-cargo.png" },
+  { id: "hero-school", sortOrder: 5, file: "hero-slide-school.png" },
+  { id: "hero-cargo", sortOrder: 6, file: "hero-slide-cargo.png" },
 ] as const;
 
 function heroAssetsDir() {
