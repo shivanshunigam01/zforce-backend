@@ -26,8 +26,8 @@ function parseCorsOrigins(): string[] {
 
 export const env = {
   nodeEnv: process.env.NODE_ENV || "development",
-  port: Number(process.env.PORT || 4000),
-  appBaseUrl: process.env.APP_BASE_URL || "http://localhost:4000",
+  port: Number(process.env.PORT || 6544),
+  appBaseUrl: process.env.APP_BASE_URL || "http://localhost:6544",
   mongodbUri: required("MONGODB_URI"),
   jwtAccessSecret: required("JWT_ACCESS_SECRET", "dev_access"),
   jwtRefreshSecret: required("JWT_REFRESH_SECRET", "dev_refresh"),

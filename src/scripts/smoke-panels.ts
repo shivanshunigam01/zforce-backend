@@ -1,11 +1,11 @@
 /**
  * Panel module smoke test — hits API routes for Admin (HO), Dealer, and Distributor.
- * Run: npm run test:panels   (backend must be on PORT, default 4000)
+ * Run: npm run test:panels   (backend must be on PORT, default 6544)
  * Seed first if logins fail: npm run seed
  */
 import "dotenv/config";
 
-const BASE = (process.env.API_BASE_URL || "http://localhost:4000/api/v1").replace(/\/$/, "");
+const BASE = (process.env.API_BASE_URL || "http://localhost:6544/api/v1").replace(/\/$/, "");
 const TENANT = process.env.SMOKE_TENANT_ID || "tenant-demo";
 const PASSWORD = process.env.SMOKE_PASSWORD || "Password@123";
 

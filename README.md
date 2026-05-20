@@ -28,7 +28,7 @@ npm run dev
 
 API base URL:
 ```text
-http://localhost:4000/api/v1
+http://localhost:6544/api/v1
 ```
 
 ## Demo users after seed
@@ -68,20 +68,20 @@ http://localhost:4000/api/v1
 
 ### Dealer login
 ```bash
-curl -X POST http://localhost:4000/api/v1/auth/dealer/login \
+curl -X POST http://localhost:6544/api/v1/auth/dealer/login \
   -H "Content-Type: application/json" \
   -d '{"userId":"dealer","password":"Password@123"}'
 ```
 
 ### Public bootstrap
 ```bash
-curl http://localhost:4000/api/v1/public/bootstrap \
+curl http://localhost:6544/api/v1/public/bootstrap \
   -H "X-Storefront-Slug: patna-auto"
 ```
 
 ### Create CIBIL order
 ```bash
-curl -X POST http://localhost:4000/api/v1/public/cibil/payment-order \
+curl -X POST http://localhost:6544/api/v1/public/cibil/payment-order \
   -H "Content-Type: application/json" \
   -H "X-Storefront-Slug: patna-auto" \
   -d '{"name":"Aman","phone":"9999999999","email":"aman@example.com","pan":"ABCDE1234F","consent":true}'
@@ -89,19 +89,19 @@ curl -X POST http://localhost:4000/api/v1/public/cibil/payment-order \
 
 ### Dealer CMS products
 ```bash
-curl http://localhost:4000/api/v1/dealer/cms/products \
+curl http://localhost:6544/api/v1/dealer/cms/products \
   -H "Authorization: Bearer <dealer_access_token>"
 ```
 
 ### Distributor dashboard
 ```bash
-curl http://localhost:4000/api/v1/tenants/tenant-demo/distributor/dashboard \
+curl http://localhost:6544/api/v1/tenants/tenant-demo/distributor/dashboard \
   -H "Authorization: Bearer <distributor_access_token>"
 ```
 
 ### Admin tenants
 ```bash
-curl http://localhost:4000/api/v1/admin/tenants \
+curl http://localhost:6544/api/v1/admin/tenants \
   -H "Authorization: Bearer <admin_access_token>"
 ```
 
