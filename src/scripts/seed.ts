@@ -61,6 +61,12 @@ async function main() {
   const { syncShowcaseProductsForDealer } = await import("../services/productsCms.service");
   await syncShowcaseProductsForDealer("dealer-demo", "tenant-demo");
 
+  const { seedMasterPresetsForDealer } = await import("../services/masterSeed.service");
+  const masterSeed = await seedMasterPresetsForDealer("dealer-demo", "tenant-demo");
+  console.log(
+    `  Master data: ${masterSeed.created} created, ${masterSeed.updated} updated (${masterSeed.total} presets)`,
+  );
+
   const passwordHash = await hashPassword("Password@123");
 
   await User.findOneAndUpdate(

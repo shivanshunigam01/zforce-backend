@@ -238,6 +238,18 @@ router.post("/masters", validate(createMasterSchema), async (req, res, next) => 
   }
 });
 
+/** Must be registered before `/masters/:id` so `seed-default` is not treated as an id. */
+router.post("/masters/seed-default", async (req, res, next) => {
+  try {
+    const dealerId = resolveMasterDealerId(req);
+    const { seedMasterPresetsForDealer } = await import("../services/masterSeed.service");
+    const result = await seedMasterPresetsForDealer(dealerId);
+    res.json({ data: result });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.patch("/masters/:id", validate(updateMasterSchema), async (req, res, next) => {
   try {
     const dealerId = resolveMasterDealerId(req);
