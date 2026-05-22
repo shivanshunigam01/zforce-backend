@@ -3,6 +3,8 @@ import { Router } from "express";
 import { validate } from "../middleware/validate";
 import {
   createMasterSchema,
+  MASTER_TYPES,
+  mastersCatalogQuerySchema,
   mastersListQuerySchema,
   updateMasterSchema,
 } from "../validators/masters.validators";
@@ -24,6 +26,23 @@ export function resolveMasterDealerId(req: any): string {
 
 /** Master Management CRUD — mount on `/admin` (HO JWT) and `/dealer` (dealer panel JWT). */
 export function registerMasterRecordRoutes(router: Router): void {
+  /** Single request: all master types for dropdowns (replaces N per-type list calls). */
+  router.get("/masters/catalog", validate(mastersCatalogQuerySchema, "query"), async (req, res, next) => {
+    try {
+      const dealerId = resolveMasterDealerId(req);
+      const rows = await MasterRecord.find({ dealerId }).sort({ createdAt: -1 }).limit(5000).lean();
+      const catalog = Object.fromEntries(MASTER_TYPES.map((t) => [t, []]));
+      for (const row of rows) {
+        const type = String(row.type || "");
+        if (!catalog[type]) catalog[type] = [];
+        catalog[type].push(toJSON(row));
+      }
+      res.json({ data: catalog });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   router.get("/masters", validate(mastersListQuerySchema, "query"), async (req, res, next) => {
     try {
       const dealerId = resolveMasterDealerId(req);

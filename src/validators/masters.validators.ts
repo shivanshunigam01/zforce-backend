@@ -15,11 +15,18 @@ const masterTypeEnum = z.enum([
   "dse",
 ]);
 
+export const MASTER_TYPES = masterTypeEnum.options;
+
 export const mastersListQuerySchema = z.object({
   type: masterTypeEnum,
   dealerId: z.string().optional(),
   page: z.coerce.number().optional(),
   limit: z.coerce.number().optional(),
+});
+
+/** All master types for a dealer in one response (panel bootstrap / dropdowns). */
+export const mastersCatalogQuerySchema = z.object({
+  dealerId: z.string().optional(),
 });
 
 export const createMasterSchema = z.object({
