@@ -3,10 +3,9 @@ import { Router } from "express";
 import { authJwt } from "../middleware/authJwt";
 import { validate } from "../middleware/validate";
 import { panelAccountEnabledSchema, panelAccountPasswordChangeSchema, panelAccountPermissionsSchema } from "../validators/auth.validators";
-import { createMasterSchema, mastersListQuerySchema, updateMasterSchema } from "../validators/masters.validators";
+import { registerMasterRecordRoutes } from "./masterRecords.routes";
 import { createStaffSchema, updateStaffSchema } from "../validators/staff.validators";
 import HoStaff from "../models/HoStaff";
-import MasterRecord from "../models/MasterRecord";
 import { hashPassword, verifyPassword } from "../utils/auth";
 import { getPagination } from "../utils/pagination";
 import { paginated, toJSON } from "../utils/api";
@@ -67,16 +66,6 @@ async function nextHoEmployeeId(): Promise<string> {
     if (m) max = Math.max(max, Number(m[1]));
   }
   return `EMP-${String(max + 1).padStart(3, "0")}`;
-}
-
-function resolveMasterDealerId(req: any): string {
-  const byQuery = String(req.query.dealerId || "").trim();
-  if (byQuery) return byQuery;
-  const byHeader = String(req.header("x-dealer-id") || "").trim();
-  if (byHeader) return byHeader;
-  const byJwt = String(req.user?.dealerId || "").trim();
-  if (byJwt) return byJwt;
-  return "dealer-demo";
 }
 
 router.get("/tenants", async (req, res, next) => { try { await list(req, res, Tenant); } catch (e) { next(e); } });
@@ -189,9 +178,71 @@ router.post("/panel-account/change-password", validate(panelAccountPasswordChang
 router.get("/dealers", async (req, res, next) => { try { await list(req, res, Storefront, req.query.tenantId ? { tenantId: req.query.tenantId } : {}); } catch (e) { next(e); } });
 
 router.get("/ho/deviation-requests", async (req, res, next) => { try { await list(req, res, DeviationRequest); } catch (e) { next(e); } });
-router.patch("/ho/deviation-requests/:id", async (req, res, next) => { try { await patchOne(req, res, DeviationRequest, { _id: req.params.id }, req.body); } catch (e) { next(e); } });
+router.post("/ho/deviation-requests", async (req, res, next) => {
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const dealerId = String(body.dealerId || req.header("x-dealer-id") || "").trim();
+    if (!dealerId) throw new AppError(400, "VALIDATION", "dealerId is required");
+    const amountPaise =
+      Number(body.amountPaise) ||
+      Math.round((Number(body.amount) || Number(body.os) || 0) * 100);
+    const payload =
+      body.payload && typeof body.payload === "object" ? body.payload : {};
+    const row = await DeviationRequest.create({
+      dealerId,
+      tenantId: body.tenantId ? String(body.tenantId) : req.user?.tenantId,
+      requestNo: String(body.requestNo || `HO-${Date.now()}`),
+      requestType: String(body.requestType || "ho_deviation"),
+      customerId: body.customerId ? String(body.customerId) : undefined,
+      customerName: body.customerName ? String(body.customerName) : undefined,
+      quotationId: body.quotationId
+        ? String(body.quotationId)
+        : payload.quoteNo
+          ? String(payload.quoteNo)
+          : undefined,
+      amountPaise,
+      status: String(body.status || "pending").toLowerCase(),
+      reason: body.reason ? String(body.reason) : undefined,
+      payload: {
+        ...payload,
+        custId: payload.custId || body.customerId,
+        name: payload.name || body.customerName,
+        quoteNo: payload.quoteNo || body.quotationId,
+        collectionPlan: payload.collectionPlan,
+        owner: payload.owner,
+        ownerName: payload.ownerName,
+        requestedBy: payload.requestedBy,
+        raisedDate: payload.raisedDate,
+      },
+    });
+    res.status(201).json({ data: toJSON(row) });
+  } catch (e) {
+    next(e);
+  }
+});
+router.patch("/ho/deviation-requests/:id", async (req, res, next) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const filter =
+      /^[a-fA-F0-9]{24}$/.test(id) ? { _id: id } : { requestNo: id };
+    await patchOne(req, res, DeviationRequest, filter, req.body);
+  } catch (e) {
+    next(e);
+  }
+});
 router.get("/ho/invoice-cancellations", async (req, res, next) => { try { await list(req, res, InvoiceCancellation); } catch (e) { next(e); } });
-router.patch("/ho/invoice-cancellations/:id", async (req, res, next) => { try { await patchOne(req, res, InvoiceCancellation, { _id: req.params.id }, req.body); } catch (e) { next(e); } });
+router.patch("/ho/invoice-cancellations/:id", async (req, res, next) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const filter =
+      /^[a-fA-F0-9]{24}$/.test(id)
+        ? { _id: id }
+        : { cancellationId: id };
+    await patchOne(req, res, InvoiceCancellation, filter, req.body);
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.get("/audit-logs", async (req, res, next) => { try { await list(req, res, AuditLog, req.query.actorId ? { actorId: req.query.actorId } : {}); } catch (e) { next(e); } });
 router.post("/tenants/:tenantId/issue-distributor-token", async (req, res) => {
@@ -203,78 +254,7 @@ router.put("/cms/default-products", async (req, res) => { res.json({ data: { not
 router.get("/cms/default-hero", async (req, res) => { res.json({ data: { hero: [] } }); });
 router.put("/cms/default-hero", async (req, res) => { res.json({ data: { hero: req.body } }); });
 
-/** Admin Master Management: fully MongoDB-backed (no local-only static data). */
-router.get("/masters", validate(mastersListQuerySchema, "query"), async (req, res, next) => {
-  try {
-    const dealerId = resolveMasterDealerId(req);
-    const { page, limit, skip } = getPagination(req.query);
-    const filter = { dealerId, type: req.query.type };
-    const [rows, total] = await Promise.all([
-      MasterRecord.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
-      MasterRecord.countDocuments(filter),
-    ]);
-    res.json(paginated(page, limit, total, rows.map(toJSON)));
-  } catch (e) {
-    next(e);
-  }
-});
-
-router.post("/masters", validate(createMasterSchema), async (req, res, next) => {
-  try {
-    const dealerId = resolveMasterDealerId(req);
-    const sf = await StorefrontModel.findOne({ dealerId }).select("tenantId");
-    const row = await MasterRecord.create({
-      dealerId,
-      tenantId: sf?.tenantId || req.user?.tenantId || "",
-      type: req.body.type,
-      code: req.body.code || "",
-      name: req.body.name,
-      status: req.body.status || "Active",
-      extra: req.body.extra || {},
-    });
-    res.status(201).json({ data: toJSON(row) });
-  } catch (e) {
-    next(e);
-  }
-});
-
-/** Must be registered before `/masters/:id` so `seed-default` is not treated as an id. */
-router.post("/masters/seed-default", async (req, res, next) => {
-  try {
-    const dealerId = resolveMasterDealerId(req);
-    const { seedMasterPresetsForDealer } = await import("../services/masterSeed.service");
-    const result = await seedMasterPresetsForDealer(dealerId);
-    res.json({ data: result });
-  } catch (e) {
-    next(e);
-  }
-});
-
-router.patch("/masters/:id", validate(updateMasterSchema), async (req, res, next) => {
-  try {
-    const dealerId = resolveMasterDealerId(req);
-    const row = await MasterRecord.findOneAndUpdate(
-      { _id: req.params.id, dealerId },
-      { $set: req.body },
-      { new: true },
-    );
-    if (!row) throw new AppError(404, "NOT_FOUND", "Master row not found");
-    res.json({ data: toJSON(row) });
-  } catch (e) {
-    next(e);
-  }
-});
-
-router.delete("/masters/:id", async (req, res, next) => {
-  try {
-    const dealerId = resolveMasterDealerId(req);
-    const row = await MasterRecord.findOneAndDelete({ _id: req.params.id, dealerId });
-    if (!row) throw new AppError(404, "NOT_FOUND", "Master row not found");
-    res.json({ data: { success: true } });
-  } catch (e) {
-    next(e);
-  }
-});
+registerMasterRecordRoutes(router);
 
 /** HO employee directory (User Management) — MongoDB-backed, not localStorage. */
 router.get("/staff-directory", async (req, res, next) => {

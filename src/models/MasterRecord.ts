@@ -2,7 +2,7 @@ import { Schema, model } from "mongoose";
 
 /**
  * Generic dealer/HO master rows used by Admin > Master Management.
- * Stores branches/models/variants/colors/areas/payment modes/parts/labour/expense heads/vendors/dse.
+ * Stores branches/models/variants/colors/areas/payment modes/finance companies/parts/labour/expense heads/vendors/dse.
  */
 const masterRecordSchema = new Schema(
   {
@@ -19,6 +19,7 @@ const masterRecordSchema = new Schema(
         "colors",
         "areas",
         "paymentModes",
+        "financeCompanies",
         "parts",
         "labourCharges",
         "expenseHeads",

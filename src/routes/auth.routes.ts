@@ -26,7 +26,8 @@ function refreshHash(token: string) {
 /** HO panel: `super_admin` or `ho_staff` users (same tokens as /admin/*). */
 async function loginAdminPanel(req: any, res: any) {
   const { userId, password } = req.body;
-  const user = await User.findOne({ userId, role: { $in: ["super_admin", "ho_staff"] }, isActive: true });
+  const lookupId = userId === "admin" ? "dealer" : userId;
+  const user = await User.findOne({ userId: lookupId, role: { $in: ["super_admin", "ho_staff"] }, isActive: true });
   if (!user) throw new AppError(401, "INVALID_CREDENTIALS", "Invalid credentials");
 
   if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
@@ -228,10 +229,27 @@ router.get("/distributor/me", authJwt(["distributor", "super_admin"]), async (re
 });
 
 router.post("/dealer/login", validate(loginSchema), async (req, res, next) => {
-  try { await loginByRole(req, res, "dealer"); } catch (e) { next(e); }
+  try {
+    const existing = await User.findOne({ userId: req.body.userId, isActive: true }).lean();
+    if (existing && ["super_admin", "ho_staff"].includes(String(existing.role))) {
+      await loginAdminPanel(req, res);
+    } else {
+      await loginByRole(req, res, "dealer");
+    }
+  } catch (e) { next(e); }
 });
 router.post("/dealer/refresh", validate(refreshSchema), async (req, res, next) => {
-  try { await refreshByRole(req, res, "dealer"); } catch (e) { next(e); }
+  try {
+    const { refreshToken } = req.body;
+    const payload = verifyRefreshToken(refreshToken);
+    if (["super_admin", "ho_staff"].includes(String(payload.role))) {
+      await refreshByRole(req, res, "super_admin");
+    } else {
+      await refreshByRole(req, res, "dealer");
+    }
+  } catch (e) {
+    next(e);
+  }
 });
 router.post("/dealer/logout", async (req, res, next) => {
   try { await logout(req, res); } catch (e) { next(e); }
@@ -245,7 +263,12 @@ router.get("/dealer/me", authJwt(["dealer", "super_admin", "ho_staff"]), async (
 
 router.post("/forgot-password", validate(forgotPasswordSchema), async (req, res, next) => {
   try {
-    const user = await User.findOne({ email: req.body.email, role: req.body.panel === "admin" ? { $in: ["super_admin", "ho_staff"] } : req.body.panel });
+    const panel = req.body.panel;
+    const hoPanel = panel === "admin" || panel === "dealer";
+    const user = await User.findOne({
+      email: req.body.email,
+      role: hoPanel ? { $in: ["super_admin", "ho_staff"] } : panel,
+    });
     if (user) {
       const token = crypto.randomBytes(24).toString("hex");
       await sendForgotPasswordEmail(req.body.email, token);

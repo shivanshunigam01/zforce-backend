@@ -4,8 +4,16 @@ const schema = new Schema({
   tenantId: String,
   receiptNo: { type: String, unique: true, index: true },
   customerId: String,
+  customerName: String,
+  phone: String,
+  quotationId: String,
+  quoteNo: String,
   amountPaise: Number,
   mode: String,
-  status: { type: String, default: "received", index: true }
+  reference: String,
+  receivedBy: String,
+  depositedAt: Date,
+  status: { type: String, default: "received", index: true },
+  payload: Schema.Types.Mixed,
 }, { timestamps: true });
 export default model("PaymentReceipt", schema);

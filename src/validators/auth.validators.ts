@@ -11,7 +11,7 @@ export const refreshSchema = z.object({
 
 export const forgotPasswordSchema = z.object({
   email: z.string().email(),
-  panel: z.enum(["admin", "dealer", "distributor"])
+  panel: z.enum(["admin", "dealer", "distributor"]) // "admin" legacy alias for dealer panel
 });
 
 export const resetPasswordSchema = z.object({

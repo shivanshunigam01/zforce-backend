@@ -47,6 +47,7 @@ import ServiceJob from "../models/ServiceJob";
 import AccountEntry from "../models/AccountEntry";
 import ReportExportJob from "../models/ReportExportJob";
 import { AppError } from "../utils/errors";
+import { registerMasterRecordRoutes } from "./masterRecords.routes";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -76,8 +77,11 @@ router.use((req, res, next) => {
     return requireModulePermission("inventory")(req, res, next);
   }
   if (p.startsWith("/dms/dashboard")) return requireModulePermission("dashboard")(req, res, next);
+  if (p.startsWith("/masters")) return requireModulePermission("master_management")(req, res, next);
   return next();
 });
+
+registerMasterRecordRoutes(router);
 
 function dealerFilter(req: any) {
   return { dealerId: req.user.dealerId };
@@ -511,18 +515,20 @@ router.post("/dms/notifications/read-all", async (req, res, next) => {
   try { await Notification.updateMany({ userId: req.user!.sub, isRead: false }, { isRead: true }); res.json({ data: { success: true } }); } catch (e) { next(e); }
 });
 
-function registerCrud(base: string, Model: any, config?: { codeField?: string; dealerScoped?: boolean; tenantScoped?: boolean; }) {
+function registerCrud(base: string, Model: any, config?: { codeField?: string; dealerScoped?: boolean; tenantScoped?: boolean; skipPost?: boolean; skipPatch?: boolean; }) {
   const codeField = config?.codeField;
   const scope = (req: any) => ({ ...(config?.dealerScoped === false ? {} : { dealerId: req.user!.dealerId }), ...(config?.tenantScoped ? { tenantId: req.user!.tenantId } : {}) });
 
   router.get(base, async (req, res, next) => { try { await list(req, res, Model, scope(req)); } catch (e) { next(e); } });
-  router.post(base, async (req, res, next) => {
-    try {
-      const data = { ...req.body, ...scope(req) };
-      const row = await Model.create(data);
-      res.status(201).json({ data: toJSON(row) });
-    } catch (e) { next(e); }
-  });
+  if (!config?.skipPost) {
+    router.post(base, async (req, res, next) => {
+      try {
+        const data = { ...req.body, ...scope(req) };
+        const row = await Model.create(data);
+        res.status(201).json({ data: toJSON(row) });
+      } catch (e) { next(e); }
+    });
+  }
   const param = codeField ? `:${codeField}` : ":id";
   router.get(`${base}/${param}`, async (req, res, next) => {
     try {
@@ -531,13 +537,15 @@ function registerCrud(base: string, Model: any, config?: { codeField?: string; d
       await getOne(req, res, Model, filter);
     } catch (e) { next(e); }
   });
-  router.patch(`${base}/${param}`, async (req, res, next) => {
-    try {
-      const value = req.params[codeField || "id"];
-      const filter = codeField ? { [codeField]: value, ...scope(req) } : { _id: value, ...scope(req) };
-      await patchOne(req, res, Model, filter, req.body);
-    } catch (e) { next(e); }
-  });
+  if (!config?.skipPatch) {
+    router.patch(`${base}/${param}`, async (req, res, next) => {
+      try {
+        const value = req.params[codeField || "id"];
+        const filter = codeField ? { [codeField]: value, ...scope(req) } : { _id: value, ...scope(req) };
+        await patchOne(req, res, Model, filter, req.body);
+      } catch (e) { next(e); }
+    });
+  }
   router.delete(`${base}/${param}`, async (req, res, next) => {
     try {
       const value = req.params[codeField || "id"];
@@ -549,7 +557,66 @@ function registerCrud(base: string, Model: any, config?: { codeField?: string; d
   });
 }
 
-registerCrud("/dms/crm/customers", Customer);
+router.get("/dms/crm/customers", async (req, res, next) => {
+  try {
+    const { backfillCustomerIdsForDealer } = await import("../services/customerId.service");
+    await backfillCustomerIdsForDealer(req.user!.dealerId);
+    await list(req, res, Customer, { dealerId: req.user!.dealerId });
+  } catch (e) {
+    next(e);
+  }
+});
+router.post("/dms/crm/customers", async (req, res, next) => {
+  try {
+    const { nextCustomerId } = await import("../services/customerId.service");
+    const customerId = await nextCustomerId(req.user!.dealerId);
+    const row = await Customer.create({
+      ...req.body,
+      dealerId: req.user!.dealerId,
+      tenantId: req.user!.tenantId,
+      customerId,
+    });
+    res.status(201).json({ data: toJSON(row) });
+  } catch (e) {
+    next(e);
+  }
+});
+router.get("/dms/crm/customers/:customerId", async (req, res, next) => {
+  try {
+    await getOne(req, res, Customer, { customerId: req.params.customerId, dealerId: req.user!.dealerId });
+  } catch (e) {
+    next(e);
+  }
+});
+router.patch("/dms/crm/customers/:customerId", async (req, res, next) => {
+  try {
+    const body = { ...req.body };
+    delete body.customerId;
+    delete body.dealerId;
+    await patchOne(
+      req,
+      res,
+      Customer,
+      { customerId: req.params.customerId, dealerId: req.user!.dealerId },
+      body,
+    );
+  } catch (e) {
+    next(e);
+  }
+});
+router.delete("/dms/crm/customers/:customerId", async (req, res, next) => {
+  try {
+    const row = await Customer.findOneAndDelete({
+      customerId: req.params.customerId,
+      dealerId: req.user!.dealerId,
+    });
+    if (!row) throw new AppError(404, "NOT_FOUND", "Customer not found");
+    res.json({ data: { success: true } });
+  } catch (e) {
+    next(e);
+  }
+});
+
 registerCrud("/dms/crm/leads", CRMLead);
 registerCrud("/dms/crm/visits", Visit);
 registerCrud("/dms/crm/activities", Activity);
@@ -582,6 +649,17 @@ router.post("/dms/orders/:orderNo/receive", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.post("/dms/payment-receipts", async (req, res, next) => {
+  try {
+    const { createCustomerLedgerEntryFromPayment } = await import("../services/customerLedger.service");
+    const data = { ...req.body, dealerId: req.user!.dealerId, tenantId: req.user!.tenantId };
+    const row = await PaymentReceipt.create(data);
+    await createCustomerLedgerEntryFromPayment(row);
+    res.status(201).json({ data: toJSON(row) });
+  } catch (e) {
+    next(e);
+  }
+});
 registerCrud("/dms/payment-receipts", PaymentReceipt, { codeField: "receiptNo" });
 router.get("/dms/payment-receipts/:receiptNo/pdf", async (req, res) => {
   res.json({ data: { message: "PDF streaming placeholder", receiptNo: req.params.receiptNo } });
@@ -597,13 +675,79 @@ router.get("/dms/outstanding/summary", async (req, res, next) => {
 router.get("/dms/outstanding/lines", async (req, res, next) => {
   try { await list(req, res, Invoice, { dealerId: req.user!.dealerId }); } catch (e) { next(e); }
 });
-registerCrud("/dms/ho-deviation-requests", DeviationRequest);
+router.post("/dms/ho-deviation-requests", async (req, res, next) => {
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const amountPaise =
+      Number(body.amountPaise) ||
+      Math.round((Number(body.amount) || Number(body.os) || 0) * 100);
+    const payload =
+      body.payload && typeof body.payload === "object" ? body.payload : {};
+    const row = await DeviationRequest.create({
+      dealerId: req.user!.dealerId,
+      tenantId: req.user!.tenantId,
+      requestNo: String(body.requestNo || `HO-${Date.now()}`),
+      requestType: String(body.requestType || "ho_deviation"),
+      customerId: body.customerId ? String(body.customerId) : undefined,
+      customerName: body.customerName ? String(body.customerName) : undefined,
+      quotationId: body.quotationId
+        ? String(body.quotationId)
+        : payload.quoteNo
+          ? String(payload.quoteNo)
+          : undefined,
+      amountPaise,
+      status: String(body.status || "pending").toLowerCase(),
+      reason: body.reason ? String(body.reason) : undefined,
+      payload: {
+        ...payload,
+        custId: payload.custId || body.customerId,
+        name: payload.name || body.customerName,
+        quoteNo: payload.quoteNo || body.quotationId,
+        collectionPlan: payload.collectionPlan,
+        owner: payload.owner,
+        ownerName: payload.ownerName,
+        requestedBy: payload.requestedBy,
+        raisedDate: payload.raisedDate,
+      },
+    });
+    res.status(201).json({ data: toJSON(row) });
+  } catch (e) {
+    next(e);
+  }
+});
+router.patch("/dms/ho-deviation-requests/:id", async (req, res, next) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const dealerId = req.user!.dealerId;
+    const filter =
+      /^[a-fA-F0-9]{24}$/.test(id)
+        ? { _id: id, dealerId }
+        : { requestNo: id, dealerId };
+    await patchOne(req, res, DeviationRequest, filter, req.body);
+  } catch (e) {
+    next(e);
+  }
+});
+registerCrud("/dms/ho-deviation-requests", DeviationRequest, { skipPost: true, skipPatch: true });
 registerCrud("/dms/collection-tracker/plans", CollectionPlan);
 registerCrud("/dms/invoices", Invoice, { codeField: "invoiceNo" });
 router.get("/dms/invoices/:invoiceNo/pdf", async (req, res) => {
   res.json({ data: { message: "PDF streaming placeholder", invoiceNo: req.params.invoiceNo } });
 });
-registerCrud("/dms/invoice-cancellations", InvoiceCancellation);
+router.patch("/dms/invoice-cancellations/:id", async (req, res, next) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const dealerId = req.user!.dealerId;
+    const filter =
+      /^[a-fA-F0-9]{24}$/.test(id)
+        ? { _id: id, dealerId }
+        : { cancellationId: id, dealerId };
+    await patchOne(req, res, InvoiceCancellation, filter, req.body);
+  } catch (e) {
+    next(e);
+  }
+});
+registerCrud("/dms/invoice-cancellations", InvoiceCancellation, { skipPatch: true });
 router.get("/dms/delivery/billed-not-delivered", async (req, res, next) => {
   try { await list(req, res, Invoice, { dealerId: req.user!.dealerId, status: "created" }); } catch (e) { next(e); }
 });

@@ -7,6 +7,9 @@ const schema = new Schema({
   accountName: String,
   amountPaise: Number,
   direction: { type: String, enum: ["debit", "credit"] },
-  customerId: String
+  customerId: String,
+  customerName: String,
+  quotationId: String,
+  payload: Schema.Types.Mixed,
 }, { timestamps: true });
 export default model("AccountEntry", schema);

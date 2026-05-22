@@ -69,9 +69,33 @@ async function main() {
 
   const passwordHash = await hashPassword("Password@123");
 
+  await User.deleteOne({ userId: "admin", role: "super_admin" });
+  const dealerPanelPermissions = [
+    "dashboard",
+    "crm",
+    "inventory",
+    "invoicing",
+    "payments",
+    "master_management",
+    "cms",
+    "reports",
+    "dealer_management",
+    "account_management",
+    "user_management",
+    "hr",
+    "settings",
+  ];
   await User.findOneAndUpdate(
-    { userId: "admin" },
-    { userId: "admin", email: "admin@example.com", displayName: "Super Admin", passwordHash, role: "super_admin", isActive: true },
+    { userId: "dealer", role: "super_admin" },
+    {
+      userId: "dealer",
+      email: "dealer@zforce.example",
+      displayName: "Dealer",
+      passwordHash,
+      role: "super_admin",
+      isActive: true,
+      permissions: dealerPanelPermissions,
+    },
     { upsert: true, new: true }
   );
   await User.findOneAndUpdate(
@@ -79,11 +103,7 @@ async function main() {
     { userId: "distributor", email: "distributor@example.com", displayName: "Distributor User", passwordHash, role: "distributor", tenantId: "tenant-demo", isActive: true },
     { upsert: true, new: true }
   );
-  await User.findOneAndUpdate(
-    { userId: "dealer" },
-    { userId: "dealer", email: "dealer@example.com", displayName: "Dealer User", passwordHash, role: "dealer", tenantId: "tenant-demo", dealerId: "dealer-demo", branchIds: ["branch-1"], isActive: true },
-    { upsert: true, new: true }
-  );
+  await User.deleteOne({ userId: "dealer", role: "dealer" });
 
   if (env.cloudinaryCloudName && env.cloudinaryApiKey && env.cloudinaryApiSecret) {
     console.log("Uploading default hero slides to Cloudinary (dealer-demo)…");
