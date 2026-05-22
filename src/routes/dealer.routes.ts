@@ -569,12 +569,15 @@ router.get("/dms/crm/customers", async (req, res, next) => {
 router.post("/dms/crm/customers", async (req, res, next) => {
   try {
     const { nextCustomerId } = await import("../services/customerId.service");
+    const { normalizeCustomerKycForSave } = await import("../utils/customerKyc");
     const customerId = await nextCustomerId(req.user!.dealerId);
+    const body = req.body && typeof req.body === "object" ? { ...req.body } : {};
     const row = await Customer.create({
-      ...req.body,
+      ...body,
       dealerId: req.user!.dealerId,
       tenantId: req.user!.tenantId,
       customerId,
+      kyc: normalizeCustomerKycForSave(body.kyc),
     });
     res.status(201).json({ data: toJSON(row) });
   } catch (e) {
@@ -597,6 +600,8 @@ router.patch("/dms/crm/customers/:customerId", async (req, res, next) => {
     delete body.id;
     delete body._id;
     if (body.fleetSize != null) body.fleetSize = Number(body.fleetSize) || 0;
+    const { normalizeCustomerKycForSave } = await import("../utils/customerKyc");
+    body.kyc = normalizeCustomerKycForSave(body.kyc);
     await patchOne(
       req,
       res,

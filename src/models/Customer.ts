@@ -17,7 +17,10 @@ const schema = new Schema({
   businessType: String,
   category: String,
   fleetSize: Number,
-  kyc: { type: Schema.Types.Mixed, default: {} },
+  kyc: {
+    type: Schema.Types.Mixed,
+    default: { status: "Verified", autoVerified: true },
+  },
   createdFrom: String
 }, { timestamps: true });
 
