@@ -590,9 +590,13 @@ router.get("/dms/crm/customers/:customerId", async (req, res, next) => {
 });
 router.patch("/dms/crm/customers/:customerId", async (req, res, next) => {
   try {
-    const body = { ...req.body };
+    const body = { ...(req.body && typeof req.body === "object" ? req.body : {}) };
     delete body.customerId;
     delete body.dealerId;
+    delete body.tenantId;
+    delete body.id;
+    delete body._id;
+    if (body.fleetSize != null) body.fleetSize = Number(body.fleetSize) || 0;
     await patchOne(
       req,
       res,
