@@ -4,6 +4,7 @@ const schema = new Schema({
   tenantId: String,
   gatePassNo: { type: String, unique: true, index: true },
   invoiceNo: String,
-  status: { type: String, default: "issued", index: true }
+  status: { type: String, default: "issued", index: true },
+  payload: Schema.Types.Mixed,
 }, { timestamps: true });
 export default model("GatePass", schema);

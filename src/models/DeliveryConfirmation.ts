@@ -4,6 +4,7 @@ const schema = new Schema({
   tenantId: String,
   invoiceNo: String,
   status: { type: String, default: "delivered", index: true },
-  customerAck: Schema.Types.Mixed
+  customerAck: Schema.Types.Mixed,
+  payload: Schema.Types.Mixed,
 }, { timestamps: true });
 export default model("DeliveryConfirmation", schema);

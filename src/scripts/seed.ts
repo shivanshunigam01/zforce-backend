@@ -125,6 +125,12 @@ async function main() {
     console.warn("Skipping hero/gallery CMS seed: set CLOUDINARY_* in backend/.env");
   }
 
+  const { seedDeliveryDemo } = await import("../services/seedDeliveryDemo.service");
+  const delivery = await seedDeliveryDemo("dealer-demo", "tenant-demo");
+  console.log(
+    `  Delivery demo: ${delivery.invoices} invoices, ${delivery.checklists} checklists, ${delivery.gatePasses} gate passes, ${delivery.confirmations} pending confirmations`,
+  );
+
   console.log("Seed complete");
   process.exit(0);
 }

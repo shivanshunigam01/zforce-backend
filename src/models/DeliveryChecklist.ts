@@ -4,6 +4,7 @@ const schema = new Schema({
   tenantId: String,
   invoiceNo: String,
   status: { type: String, default: "draft", index: true },
-  checks: Schema.Types.Mixed
+  checks: Schema.Types.Mixed,
+  payload: Schema.Types.Mixed,
 }, { timestamps: true });
 export default model("DeliveryChecklist", schema);

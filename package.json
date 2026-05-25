@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/app.js",
     "seed": "ts-node --transpile-only src/scripts/seed.ts",
+    "seed:delivery": "ts-node --transpile-only src/scripts/seed-delivery-demo.ts",
     "seed:hero": "ts-node --transpile-only src/scripts/seed-hero.ts",
     "clear-db": "ts-node --transpile-only src/scripts/clear-db.ts",
     "reset-db": "npm run clear-db && npm run seed",
