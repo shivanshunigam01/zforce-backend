@@ -31,7 +31,9 @@ export const env = {
   mongodbUri: required("MONGODB_URI"),
   jwtAccessSecret: required("JWT_ACCESS_SECRET", "dev_access"),
   jwtRefreshSecret: required("JWT_REFRESH_SECRET", "dev_refresh"),
-  jwtAccessTtl: process.env.JWT_ACCESS_TTL || "15m",
+  jwtAccessTtl:
+    process.env.JWT_ACCESS_TTL ||
+    ((process.env.NODE_ENV || "development") === "production" ? "15m" : "8h"),
   jwtRefreshTtl: process.env.JWT_REFRESH_TTL || "30d",
   corsOrigins: parseCorsOrigins(),
   cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME || "",
