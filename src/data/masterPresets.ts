@@ -215,6 +215,18 @@ export const MASTER_PRESETS: MasterPresetRow[] = [
   { type: "financeCompanies", name: "IndusInd Bank", code: "FIN-INDUS", extra: { category: "Bank" } },
   { type: "financeCompanies", name: "Other", code: "FIN-OTHER", extra: { category: "Other" } },
 
+  { type: "insuranceCompanies", name: "ICICI Lombard", code: "INS-ICICI", extra: { category: "General" } },
+  { type: "insuranceCompanies", name: "HDFC ERGO", code: "INS-HDFC", extra: { category: "General" } },
+  { type: "insuranceCompanies", name: "Bajaj Allianz", code: "INS-BAJAJ", extra: { category: "General" } },
+  { type: "insuranceCompanies", name: "Tata AIG", code: "INS-TATA", extra: { category: "General" } },
+  { type: "insuranceCompanies", name: "Reliance General Insurance", code: "INS-REL", extra: { category: "General" } },
+  { type: "insuranceCompanies", name: "New India Assurance", code: "INS-NIA", extra: { category: "PSU" } },
+  { type: "insuranceCompanies", name: "Oriental Insurance", code: "INS-OIC", extra: { category: "PSU" } },
+  { type: "insuranceCompanies", name: "United India Insurance", code: "INS-UII", extra: { category: "PSU" } },
+  { type: "insuranceCompanies", name: "National Insurance", code: "INS-NIC", extra: { category: "PSU" } },
+  { type: "insuranceCompanies", name: "SBI General Insurance", code: "INS-SBI", extra: { category: "General" } },
+  { type: "insuranceCompanies", name: "Other", code: "INS-OTHER", extra: { category: "Other" } },
+
   // Parts
   {
     type: "parts",

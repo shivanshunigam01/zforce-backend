@@ -44,7 +44,10 @@ import BatteryInventory from "../models/BatteryInventory";
 import StockReceipt from "../models/StockReceipt";
 import PurchaseOrder from "../models/PurchaseOrder";
 import ServiceJob from "../models/ServiceJob";
+import ServiceInvoice from "../models/ServiceInvoice";
 import AccountEntry from "../models/AccountEntry";
+import Employee from "../models/Employee";
+import Attendance from "../models/Attendance";
 import ReportExportJob from "../models/ReportExportJob";
 import { AppError } from "../utils/errors";
 import { registerMasterRecordRoutes } from "./masterRecords.routes";
@@ -77,6 +80,7 @@ router.use((req, res, next) => {
     return requireModulePermission("inventory")(req, res, next);
   }
   if (p.startsWith("/dms/dashboard")) return requireModulePermission("dashboard")(req, res, next);
+  if (p.startsWith("/dms/hr/")) return requireModulePermission("hr")(req, res, next);
   if (p.startsWith("/masters")) return requireModulePermission("master_management")(req, res, next);
   return next();
 });
@@ -661,9 +665,11 @@ router.post("/dms/orders/:orderNo/receive", async (req, res, next) => {
 router.post("/dms/payment-receipts", async (req, res, next) => {
   try {
     const { createCustomerLedgerEntryFromPayment } = await import("../services/customerLedger.service");
+    const { createCashBankFromPayment } = await import("../services/accounts.service");
     const data = { ...req.body, dealerId: req.user!.dealerId, tenantId: req.user!.tenantId };
     const row = await PaymentReceipt.create(data);
     await createCustomerLedgerEntryFromPayment(row);
+    await createCashBankFromPayment(row);
     res.status(201).json({ data: toJSON(row) });
   } catch (e) {
     next(e);
@@ -739,7 +745,31 @@ router.patch("/dms/ho-deviation-requests/:id", async (req, res, next) => {
 });
 registerCrud("/dms/ho-deviation-requests", DeviationRequest, { skipPost: true, skipPatch: true });
 registerCrud("/dms/collection-tracker/plans", CollectionPlan);
-registerCrud("/dms/invoices", Invoice, { codeField: "invoiceNo" });
+registerCrud("/dms/invoices", Invoice, { codeField: "invoiceNo", skipPost: true, skipPatch: true });
+router.post("/dms/invoices", async (req, res, next) => {
+  try {
+    const row = await Invoice.create({
+      ...req.body,
+      dealerId: req.user!.dealerId,
+      tenantId: req.user!.tenantId,
+    });
+    const { syncInventoryFromInvoice } = await import("../services/inventorySync.service");
+    const { createCustomerLedgerEntryFromInvoice } = await import("../services/accounts.service");
+    await syncInventoryFromInvoice(req.user!.dealerId, req.user!.tenantId, row.toObject());
+    await createCustomerLedgerEntryFromInvoice(row);
+    res.status(201).json({ data: toJSON(row) });
+  } catch (e) { next(e); }
+});
+router.patch("/dms/invoices/:invoiceNo", async (req, res, next) => {
+  try {
+    const filter = { invoiceNo: req.params.invoiceNo, dealerId: req.user!.dealerId };
+    const row = await Invoice.findOneAndUpdate(filter, req.body, { new: true });
+    if (!row) throw new AppError(404, "NOT_FOUND", "Invoice not found");
+    const { syncInventoryFromInvoice } = await import("../services/inventorySync.service");
+    await syncInventoryFromInvoice(req.user!.dealerId, req.user!.tenantId, row.toObject());
+    res.json({ data: toJSON(row) });
+  } catch (e) { next(e); }
+});
 router.get("/dms/invoices/:invoiceNo/pdf", async (req, res) => {
   res.json({ data: { message: "PDF streaming placeholder", invoiceNo: req.params.invoiceNo } });
 });
@@ -760,23 +790,166 @@ registerCrud("/dms/invoice-cancellations", InvoiceCancellation, { skipPatch: tru
 router.get("/dms/delivery/billed-not-delivered", async (req, res, next) => {
   try { await list(req, res, Invoice, { dealerId: req.user!.dealerId, status: "created" }); } catch (e) { next(e); }
 });
-registerCrud("/dms/delivery/checklists", DeliveryChecklist);
+registerCrud("/dms/delivery/checklists", DeliveryChecklist, { skipPatch: true });
+router.patch("/dms/delivery/checklists/:id", async (req, res, next) => {
+  try {
+    const filter = { _id: req.params.id, dealerId: req.user!.dealerId };
+    const row = await DeliveryChecklist.findOneAndUpdate(filter, req.body, { new: true });
+    if (!row) throw new AppError(404, "NOT_FOUND", "Checklist not found");
+    const { syncInventoryFromChecklist } = await import("../services/inventorySync.service");
+    await syncInventoryFromChecklist(req.user!.dealerId, req.user!.tenantId, row.toObject());
+    res.json({ data: toJSON(row) });
+  } catch (e) { next(e); }
+});
 registerCrud("/dms/delivery/gate-passes", GatePass);
-registerCrud("/dms/delivery/confirmations", DeliveryConfirmation);
+registerCrud("/dms/delivery/confirmations", DeliveryConfirmation, { skipPatch: true });
+router.patch("/dms/delivery/confirmations/:id", async (req, res, next) => {
+  try {
+    const filter = { _id: req.params.id, dealerId: req.user!.dealerId };
+    const row = await DeliveryConfirmation.findOneAndUpdate(filter, req.body, { new: true });
+    if (!row) throw new AppError(404, "NOT_FOUND", "Confirmation not found");
+    const { syncInventoryFromDeliveryConfirmation } = await import("../services/inventorySync.service");
+    await syncInventoryFromDeliveryConfirmation(req.user!.dealerId, req.user!.tenantId, row.toObject());
+    res.json({ data: toJSON(row) });
+  } catch (e) { next(e); }
+});
 registerCrud("/dms/inventory/vehicles", VehicleInventory, { codeField: "stockNo" });
 registerCrud("/dms/inventory/spare-parts", SparePartInventory, { codeField: "partNo" });
 registerCrud("/dms/inventory/batteries", BatteryInventory, { codeField: "batteryNo" });
-registerCrud("/dms/stock-receipts", StockReceipt);
-registerCrud("/dms/purchase-orders", PurchaseOrder);
-router.post("/dms/purchase-orders/:id/receive", async (req, res, next) => {
+registerCrud("/dms/stock-receipts", StockReceipt, { skipPost: true });
+router.post("/dms/stock-receipts", async (req, res, next) => {
   try {
-    const row = await PurchaseOrder.findOne({ _id: req.params.id, dealerId: req.user!.dealerId });
-    if (!row) throw new AppError(404, "NOT_FOUND", "Purchase order not found");
-    const receipt = await StockReceipt.create({ dealerId: req.user!.dealerId, tenantId: req.user!.tenantId, receiptNo: `SR-${Date.now()}`, status: "received", lines: row.lines });
-    res.status(201).json({ data: toJSON(receipt) });
+    const poId = String(req.body?.poId || "").trim();
+    if (!poId) throw new AppError(400, "VALIDATION", "poId is required");
+    const { receiveGrnAgainstPo } = await import("../services/inventory.service");
+    const result = await receiveGrnAgainstPo(req.user!.dealerId, req.user!.tenantId, poId, {
+      lines: Array.isArray(req.body?.lines) ? req.body.lines : [],
+      checkedBy: String(req.body?.checkedBy || "Warehouse"),
+      remarks: req.body?.remarks,
+      qualityRemarks: req.body?.qualityRemarks,
+      actionableDate: req.body?.actionableDate,
+    });
+    if (!result) throw new AppError(404, "NOT_FOUND", "Purchase order not found");
+    res.status(201).json({
+      data: toJSON(result.receipt),
+      meta: {
+        purchaseOrder: toJSON(result.purchaseOrder),
+        createdVehicles: result.createdVehicles,
+        updatedParts: result.updatedParts,
+        updatedBatteries: result.updatedBatteries,
+      },
+    });
   } catch (e) { next(e); }
 });
-registerCrud("/dms/service/jobs", ServiceJob);
+registerCrud("/dms/purchase-orders", PurchaseOrder, { skipPost: true, skipPatch: true });
+router.post("/dms/purchase-orders", async (req, res, next) => {
+  try {
+    const body = req.body && typeof req.body === "object" ? { ...req.body } : {};
+    const lines = Array.isArray(body.lines) ? body.lines : [];
+    const normalizedLines = lines.map((line: Record<string, unknown>) => ({
+      ...line,
+      orderedQty: Number(line.orderedQty ?? line.qty) || 0,
+      receivedQty: Number(line.receivedQty) || 0,
+      qty: Number(line.orderedQty ?? line.qty) || 0,
+    }));
+    const row = await PurchaseOrder.create({
+      ...body,
+      lines: normalizedLines,
+      status: body.status || "ordered",
+      dealerId: req.user!.dealerId,
+      tenantId: req.user!.tenantId,
+    });
+    res.status(201).json({ data: toJSON(row) });
+  } catch (e) { next(e); }
+});
+router.patch("/dms/purchase-orders/:id", async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    const filter = /^[a-fA-F0-9]{24}$/.test(id)
+      ? { _id: id, dealerId: req.user!.dealerId }
+      : { poNo: id, dealerId: req.user!.dealerId };
+    const row = await PurchaseOrder.findOneAndUpdate(filter, req.body, { new: true });
+    if (!row) throw new AppError(404, "NOT_FOUND", "Purchase order not found");
+    res.json({ data: toJSON(row) });
+  } catch (e) { next(e); }
+});
+router.post("/dms/purchase-orders/:id/receive", async (req, res, next) => {
+  try {
+    const { receiveGrnAgainstPo, receivePurchaseOrder } = await import("../services/inventory.service");
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const hasLines = Array.isArray(body.lines) && body.lines.length > 0;
+    const result = hasLines
+      ? await receiveGrnAgainstPo(req.user!.dealerId, req.user!.tenantId, req.params.id, {
+          lines: body.lines,
+          checkedBy: String(body.checkedBy || "Warehouse Manager"),
+          remarks: body.remarks,
+          qualityRemarks: body.qualityRemarks,
+          actionableDate: body.actionableDate,
+        })
+      : await receivePurchaseOrder(req.user!.dealerId, req.user!.tenantId, req.params.id);
+    if (!result) throw new AppError(404, "NOT_FOUND", "Purchase order not found");
+    res.status(201).json({
+      data: toJSON(result.receipt),
+      meta: {
+        purchaseOrder: toJSON((result as { purchaseOrder?: unknown }).purchaseOrder || {}),
+        createdVehicles: result.createdVehicles,
+        updatedParts: result.updatedParts,
+        updatedBatteries: result.updatedBatteries,
+      },
+    });
+  } catch (e) { next(e); }
+});
+registerCrud("/dms/service/jobs", ServiceJob, { codeField: "jobNo", skipPost: true, skipPatch: true });
+router.post("/dms/service/jobs", async (req, res, next) => {
+  try {
+    const body = req.body && typeof req.body === "object" ? { ...req.body } : {};
+    if (!body.jobNo) body.jobNo = `JC-${Date.now().toString(36).toUpperCase()}`;
+    const row = await ServiceJob.create({
+      ...body,
+      dealerId: req.user!.dealerId,
+      tenantId: req.user!.tenantId,
+    });
+    res.status(201).json({ data: toJSON(row) });
+  } catch (e) { next(e); }
+});
+router.patch("/dms/service/jobs/:jobNo", async (req, res, next) => {
+  try {
+    const filter = { jobNo: req.params.jobNo, dealerId: req.user!.dealerId };
+    const row = await ServiceJob.findOneAndUpdate(filter, req.body, { new: true });
+    if (!row) throw new AppError(404, "NOT_FOUND", "Service job not found");
+    res.json({ data: toJSON(row) });
+  } catch (e) { next(e); }
+});
+registerCrud("/dms/service/invoices", ServiceInvoice, { codeField: "invoiceNo", skipPost: true, skipPatch: true });
+router.post("/dms/service/invoices", async (req, res, next) => {
+  try {
+    const body = req.body && typeof req.body === "object" ? { ...req.body } : {};
+    if (!body.invoiceNo) body.invoiceNo = `SI-${Date.now().toString(36).toUpperCase()}`;
+    const row = await ServiceInvoice.create({
+      ...body,
+      dealerId: req.user!.dealerId,
+      tenantId: req.user!.tenantId,
+    });
+    if (body.jobNo || body.jobCardId) {
+      const jobNo = String(body.jobNo || body.jobCardId || "").trim();
+      if (jobNo) {
+        await ServiceJob.findOneAndUpdate(
+          { jobNo, dealerId: req.user!.dealerId },
+          { status: "closed" },
+        );
+      }
+    }
+    res.status(201).json({ data: toJSON(row) });
+  } catch (e) { next(e); }
+});
+router.patch("/dms/service/invoices/:invoiceNo", async (req, res, next) => {
+  try {
+    const filter = { invoiceNo: req.params.invoiceNo, dealerId: req.user!.dealerId };
+    const row = await ServiceInvoice.findOneAndUpdate(filter, req.body, { new: true });
+    if (!row) throw new AppError(404, "NOT_FOUND", "Service invoice not found");
+    res.json({ data: toJSON(row) });
+  } catch (e) { next(e); }
+});
 router.post("/dms/service/jobs/:id/parts-issue", async (req, res, next) => {
   try {
     const row = await ServiceJob.findOne({ _id: req.params.id, dealerId: req.user!.dealerId });
@@ -789,18 +962,31 @@ router.post("/dms/service/jobs/:id/parts-issue", async (req, res, next) => {
 router.get("/dms/accounts/cash-bank", async (req, res, next) => {
   try { await list(req, res, AccountEntry, { dealerId: req.user!.dealerId, type: "cash_bank" }); } catch (e) { next(e); }
 });
+router.get("/dms/accounts/cash-bank/summary", async (req, res, next) => {
+  try {
+    const { buildCashBankSummary } = await import("../services/accounts.service");
+    const summary = await buildCashBankSummary(req.user!.dealerId);
+    res.json({ data: summary });
+  } catch (e) { next(e); }
+});
 router.get("/dms/accounts/customer-ledger", async (req, res, next) => {
   try { await list(req, res, AccountEntry, { dealerId: req.user!.dealerId, customerId: req.query.custId }); } catch (e) { next(e); }
 });
 router.get("/dms/accounts/ledger", async (req, res, next) => {
-  try { await list(req, res, AccountEntry, { dealerId: req.user!.dealerId }); } catch (e) { next(e); }
+  try {
+    await list(req, res, AccountEntry, {
+      dealerId: req.user!.dealerId,
+      type: { $in: ["customer_payment", "customer_invoice"] },
+    });
+  } catch (e) { next(e); }
 });
 router.get("/dms/accounts/deposits", async (req, res, next) => {
   try { await list(req, res, AccountEntry, { dealerId: req.user!.dealerId, type: "deposit" }); } catch (e) { next(e); }
 });
 router.post("/dms/accounts/deposits", async (req, res, next) => {
   try {
-    const row = await AccountEntry.create({ dealerId: req.user!.dealerId, tenantId: req.user!.tenantId, type: "deposit", ...req.body });
+    const { createDepositEntry } = await import("../services/accounts.service");
+    const row = await createDepositEntry(req.user!.dealerId, req.user!.tenantId, req.body || {});
     res.status(201).json({ data: toJSON(row) });
   } catch (e) { next(e); }
 });
@@ -809,7 +995,8 @@ router.get("/dms/accounts/expenses", async (req, res, next) => {
 });
 router.post("/dms/accounts/expenses", async (req, res, next) => {
   try {
-    const row = await AccountEntry.create({ dealerId: req.user!.dealerId, tenantId: req.user!.tenantId, type: "expense", ...req.body });
+    const { createExpenseEntry } = await import("../services/accounts.service");
+    const row = await createExpenseEntry(req.user!.dealerId, req.user!.tenantId, req.body || {});
     res.status(201).json({ data: toJSON(row) });
   } catch (e) { next(e); }
 });
@@ -817,7 +1004,83 @@ router.get("/dms/accounts/expenses/:id", async (req, res, next) => {
   try { await getOne(req, res, AccountEntry, { _id: req.params.id, dealerId: req.user!.dealerId, type: "expense" }); } catch (e) { next(e); }
 });
 router.patch("/dms/accounts/expenses/:id", async (req, res, next) => {
-  try { await patchOne(req, res, AccountEntry, { _id: req.params.id, dealerId: req.user!.dealerId, type: "expense" }, req.body); } catch (e) { next(e); }
+  try {
+    const { patchExpenseEntry } = await import("../services/accounts.service");
+    const row = await patchExpenseEntry(req.user!.dealerId, req.params.id, req.body || {});
+    if (!row) throw new AppError(404, "NOT_FOUND", "Expense not found");
+    res.json({ data: toJSON(row) });
+  } catch (e) { next(e); }
+});
+router.post("/dms/hr/employees", async (req, res, next) => {
+  try {
+    const { nextDealerEmployeeId, salaryPaiseFromBody } = await import("../services/hr.service");
+    const dealerId = req.user!.dealerId;
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const employeeId = String(body.employeeId || "").trim() || (await nextDealerEmployeeId(dealerId));
+    const row = await Employee.create({
+      ...body,
+      dealerId,
+      tenantId: req.user!.tenantId,
+      employeeId,
+      salaryPaise: salaryPaiseFromBody(body),
+    });
+    res.status(201).json({ data: toJSON(row) });
+  } catch (e) { next(e); }
+});
+registerCrud("/dms/hr/employees", Employee, { codeField: "employeeId", skipPost: true, skipPatch: true });
+router.patch("/dms/hr/employees/:employeeId", async (req, res, next) => {
+  try {
+    const { salaryPaiseFromBody } = await import("../services/hr.service");
+    const body = req.body && typeof req.body === "object" ? { ...req.body } : {};
+    if (body.salary != null || body.salaryPaise != null) {
+      body.salaryPaise = salaryPaiseFromBody(body);
+      delete body.salary;
+    }
+    await patchOne(
+      req,
+      res,
+      Employee,
+      { employeeId: req.params.employeeId, dealerId: req.user!.dealerId },
+      body,
+    );
+  } catch (e) { next(e); }
+});
+router.get("/dms/hr/attendance", async (req, res, next) => {
+  try {
+    const filter: Record<string, unknown> = { dealerId: req.user!.dealerId };
+    const date = String(req.query.date || "").trim();
+    const month = String(req.query.month || "").trim();
+    if (date) filter.date = date;
+    else if (month && /^\d{4}-\d{2}$/.test(month)) filter.date = new RegExp(`^${month}`);
+    await list(req, res, Attendance, filter, { date: -1, employeeId: 1 });
+  } catch (e) { next(e); }
+});
+router.post("/dms/hr/attendance/batch", async (req, res, next) => {
+  try {
+    const { saveAttendanceBatch } = await import("../services/hr.service");
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const rows = await saveAttendanceBatch(
+      req.user!.dealerId,
+      req.user!.tenantId,
+      String(body.date || ""),
+      Array.isArray(body.entries) ? body.entries : [],
+    );
+    res.status(201).json({ data: rows.map(toJSON) });
+  } catch (e) { next(e); }
+});
+router.get("/dms/hr/summary", async (req, res, next) => {
+  try {
+    const { buildHrSummary } = await import("../services/hr.service");
+    const summary = await buildHrSummary(req.user!.dealerId, String(req.query.date || ""));
+    res.json({ data: summary });
+  } catch (e) { next(e); }
+});
+router.get("/dms/reports/hr", async (req, res, next) => {
+  try {
+    const { buildHrSummary } = await import("../services/hr.service");
+    const summary = await buildHrSummary(req.user!.dealerId, String(req.query.date || ""));
+    res.json({ data: summary });
+  } catch (e) { next(e); }
 });
 router.get("/dms/reports/sales", async (req, res) => res.json({ data: { report: "sales", filters: req.query } }));
 router.get("/dms/reports/inventory-aging", async (req, res) => res.json({ data: { report: "inventory-aging", filters: req.query } }));

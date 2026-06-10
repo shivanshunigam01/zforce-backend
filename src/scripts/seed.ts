@@ -131,6 +131,28 @@ async function main() {
     `  Delivery demo: ${delivery.invoices} invoices, ${delivery.checklists} checklists, ${delivery.gatePasses} gate passes, ${delivery.confirmations} pending confirmations`,
   );
 
+  const { seedInventoryDemo } = await import("../services/seedInventoryDemo.service");
+  const inventory = await seedInventoryDemo("dealer-demo", "tenant-demo");
+  console.log(
+    `  Inventory demo: ${inventory.vehicles} vehicles, ${inventory.spareParts} spare parts, ${inventory.batteries} batteries`,
+  );
+
+  const { seedServiceDemo } = await import("../services/seedServiceDemo.service");
+  const service = await seedServiceDemo("dealer-demo", "tenant-demo");
+  console.log(
+    `  After-sale demo: ${service.jobs} job cards, ${service.invoices} service invoices`,
+  );
+
+  const { seedAccountsDemo } = await import("../services/seedAccountsDemo.service");
+  const accounts = await seedAccountsDemo("dealer-demo", "tenant-demo");
+  console.log(
+    `  Accounts demo: ${accounts.receipts} receipts, ${accounts.deposits} deposits, ${accounts.expenses} expenses (${accounts.ledgerEntries} ledger rows)`,
+  );
+
+  const { seedHrDemo } = await import("../services/seedHrDemo.service");
+  const hr = await seedHrDemo("dealer-demo", "tenant-demo");
+  console.log(`  HR demo: ${hr.employees} employees, ${hr.attendance} attendance rows`);
+
   console.log("Seed complete");
   process.exit(0);
 }

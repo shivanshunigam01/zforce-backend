@@ -6,6 +6,7 @@ const schema = new Schema({
   chassisNo: String,
   model: String,
   status: { type: String, default: "available", index: true },
-  linkedQuoteId: String
+  linkedQuoteId: String,
+  payload: { type: Schema.Types.Mixed, default: {} },
 }, { timestamps: true });
 export default model("VehicleInventory", schema);

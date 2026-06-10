@@ -4,6 +4,7 @@ const schema = new Schema({
   tenantId: String,
   batteryNo: { type: String, unique: true, index: true },
   description: String,
-  qtyOnHand: { type: Number, default: 0 }
+  qtyOnHand: { type: Number, default: 0 },
+  payload: { type: Schema.Types.Mixed, default: {} },
 }, { timestamps: true });
 export default model("BatteryInventory", schema);

@@ -8,6 +8,7 @@ const masterTypeEnum = z.enum([
   "areas",
   "paymentModes",
   "financeCompanies",
+  "insuranceCompanies",
   "parts",
   "labourCharges",
   "expenseHeads",

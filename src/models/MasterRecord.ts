@@ -20,6 +20,7 @@ const masterRecordSchema = new Schema(
         "areas",
         "paymentModes",
         "financeCompanies",
+        "insuranceCompanies",
         "parts",
         "labourCharges",
         "expenseHeads",
