@@ -1,4 +1,10 @@
-import { syncVehicleStatus } from "./inventory.service";
+import {
+  deductBatteryForVehicleSale,
+  deductChargerForVehicleSale,
+  releaseVehicleReservationByQuote,
+  reserveVehicleForQuotation,
+  syncVehicleStatus,
+} from "./inventory.service";
 
 function pickStr(...values: unknown[]): string {
   for (const v of values) {
@@ -16,6 +22,38 @@ function invoicePayload(row: Record<string, unknown>): Record<string, unknown> {
 function docPayload(row: Record<string, unknown>): Record<string, unknown> {
   const pl = row.payload;
   return pl && typeof pl === "object" ? (pl as Record<string, unknown>) : {};
+}
+
+function quotationCrmPayload(row: Record<string, unknown>): Record<string, unknown> {
+  const pl = docPayload(row);
+  const crm = pl.crm;
+  return crm && typeof crm === "object" ? (crm as Record<string, unknown>) : pl;
+}
+
+/** Reserve chassis when a quotation/booking is saved with inventory allocation. */
+export async function syncInventoryFromQuotation(
+  dealerId: string,
+  tenantId: string,
+  quotation: Record<string, unknown>,
+) {
+  const crm = quotationCrmPayload(quotation);
+  const chassis = pickStr(crm.chassis);
+  const quoteNo = pickStr(quotation.quotationNo, crm.id);
+  if (!quoteNo) return null;
+  if (!chassis) {
+    await releaseVehicleReservationByQuote(dealerId, quoteNo);
+    return null;
+  }
+  await releaseVehicleReservationByQuote(dealerId, quoteNo);
+  return reserveVehicleForQuotation(dealerId, tenantId, {
+    chassisNo: chassis,
+    quoteNo,
+    customerName: pickStr(crm.name),
+    model: pickStr(crm.model),
+    variant: pickStr(crm.variant),
+    colour: pickStr(crm.colour),
+    batteryType: pickStr(crm.variant, crm.batteryType),
+  });
 }
 
 /** Sync vehicle inventory when invoice is created or status changes. */
@@ -47,7 +85,7 @@ export async function syncInventoryFromInvoice(
   }
 
   if (status === "created" || status === "billed" || status === "billed_not_delivered") {
-    return syncVehicleStatus(dealerId, tenantId, {
+    const vehicle = await syncVehicleStatus(dealerId, tenantId, {
       chassisNo,
       invoiceNo,
       status: "billed_not_delivered",
@@ -58,6 +96,20 @@ export async function syncInventoryFromInvoice(
       quoteNo: pickStr(pl.quoteNo, invoice.linkedQuoteId),
       invoiceDate: pickStr(invoice.createdAt, pl.invoiceDate),
     });
+    const vehiclePl =
+      vehicle?.payload && typeof vehicle.payload === "object"
+        ? (vehicle.payload as Record<string, unknown>)
+        : {};
+    if (!vehiclePl.stockDeducted) {
+      const batteryType = pickStr(vehiclePl.batteryType, pl.variant);
+      await deductBatteryForVehicleSale(dealerId, batteryType);
+      await deductChargerForVehicleSale(dealerId);
+      if (vehicle) {
+        vehicle.payload = { ...vehiclePl, stockDeducted: true };
+        await vehicle.save();
+      }
+    }
+    return vehicle;
   }
 
   return null;

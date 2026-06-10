@@ -638,7 +638,33 @@ router.delete("/dms/crm/customers/:customerId", async (req, res, next) => {
 registerCrud("/dms/crm/leads", CRMLead);
 registerCrud("/dms/crm/visits", Visit);
 registerCrud("/dms/crm/activities", Activity);
-registerCrud("/dms/crm/quotations", Quotation);
+registerCrud("/dms/crm/quotations", Quotation, { skipPost: true, skipPatch: true });
+router.post("/dms/crm/quotations", async (req, res, next) => {
+  try {
+    const row = await Quotation.create({
+      ...req.body,
+      dealerId: req.user!.dealerId,
+      tenantId: req.user!.tenantId,
+    });
+    const { syncInventoryFromQuotation } = await import("../services/inventorySync.service");
+    await syncInventoryFromQuotation(req.user!.dealerId, req.user!.tenantId, row.toObject());
+    res.status(201).json({ data: toJSON(row) });
+  } catch (e) {
+    next(e);
+  }
+});
+router.patch("/dms/crm/quotations/:id", async (req, res, next) => {
+  try {
+    const filter = { _id: req.params.id, dealerId: req.user!.dealerId };
+    const row = await Quotation.findOneAndUpdate(filter, req.body, { new: true });
+    if (!row) throw new AppError(404, "NOT_FOUND", "Quotation not found");
+    const { syncInventoryFromQuotation } = await import("../services/inventorySync.service");
+    await syncInventoryFromQuotation(req.user!.dealerId, req.user!.tenantId, row.toObject());
+    res.json({ data: toJSON(row) });
+  } catch (e) {
+    next(e);
+  }
+});
 router.get("/dms/crm/quotations/:id/revisions", async (req, res, next) => {
   try {
     const row = await Quotation.findOne({ _id: req.params.id, dealerId: req.user!.dealerId });

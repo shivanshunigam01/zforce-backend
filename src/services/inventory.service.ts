@@ -449,3 +449,110 @@ export async function receivePurchaseOrder(
     updatedBatteries: result.updatedBatteries,
   };
 }
+
+/** Map quotation battery variant labels to seeded battery SKUs. */
+const BATTERY_VARIANT_TO_NO: Record<string, string> = {
+  "eastman 140ah 15 months 48v": "BAT-EASTMAN-140AH-15M-48V",
+  "eastman 105ah": "BAT-EASTMAN-105AH-48V",
+  "livguard 130ah 12months": "BAT-LIVGUARD-130AH-12M",
+  "livguard 140ah 15months": "BAT-LIVGUARD-140AH-15M",
+  "eastman 145ah 15 months": "BAT-EASTMAN-145AH-15M",
+  "eastman 150ah 18 months": "BAT-EASTMAN-150AH-18M",
+  "60v (5 battery) eastman 140ah 15m": "BAT-60V-5X140AH-15M",
+};
+
+function batteryNoFromType(batteryType?: string): string | null {
+  const key = String(batteryType || "eastman 140ah 15 months 48v")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+  return BATTERY_VARIANT_TO_NO[key] || "BAT-EASTMAN-140AH-15M-48V";
+}
+
+export async function deductBatteryForVehicleSale(dealerId: string, batteryType?: string) {
+  const batteryNo = batteryNoFromType(batteryType);
+  if (!batteryNo) return false;
+  const row = await BatteryInventory.findOne({ dealerId, batteryNo });
+  if (!row || (row.qtyOnHand || 0) <= 0) return false;
+  row.qtyOnHand = Math.max(0, (row.qtyOnHand || 0) - 1);
+  await row.save();
+  return true;
+}
+
+export async function deductChargerForVehicleSale(dealerId: string) {
+  const partNo = "PRT-CHG-EASTMAN-18AMP";
+  const row = await SparePartInventory.findOne({ dealerId, partNo });
+  if (!row || (row.qtyOnHand || 0) <= 0) return false;
+  row.qtyOnHand = Math.max(0, (row.qtyOnHand || 0) - 1);
+  await row.save();
+  return true;
+}
+
+export async function releaseVehicleReservationByQuote(dealerId: string, quoteNo: string) {
+  const trimmed = quoteNo.trim();
+  if (!trimmed) return;
+  const rows = await VehicleInventory.find({ dealerId, linkedQuoteId: trimmed, status: "reserved" });
+  for (const vehicle of rows) {
+    vehicle.status = "available";
+    vehicle.linkedQuoteId = undefined;
+    const pl = (vehicle.payload && typeof vehicle.payload === "object"
+      ? vehicle.payload
+      : {}) as Record<string, unknown>;
+    const next = { ...pl };
+    delete next.quoteNo;
+    delete next.customerName;
+    if (next.source === "quotation") next.source = "manual";
+    vehicle.payload = next;
+    await vehicle.save();
+  }
+}
+
+export async function reserveVehicleForQuotation(
+  dealerId: string,
+  tenantId: string,
+  input: {
+    chassisNo: string;
+    quoteNo: string;
+    customerName?: string;
+    model?: string;
+    variant?: string;
+    colour?: string;
+    batteryType?: string;
+  },
+) {
+  const chassis = input.chassisNo?.trim();
+  const quoteNo = input.quoteNo?.trim();
+  if (!chassis || !quoteNo) return null;
+
+  const vehicle = await VehicleInventory.findOne({ dealerId, chassisNo: chassis });
+  if (!vehicle) throw new Error(`Chassis ${chassis} not found in inventory`);
+  if (vehicle.status === "delivered") throw new Error(`Chassis ${chassis} is already delivered`);
+  if (vehicle.status === "billed_not_delivered") {
+    throw new Error(`Chassis ${chassis} is already billed`);
+  }
+  if (
+    vehicle.status === "reserved" &&
+    vehicle.linkedQuoteId &&
+    vehicle.linkedQuoteId !== quoteNo
+  ) {
+    throw new Error(`Chassis ${chassis} is reserved for another quotation`);
+  }
+
+  vehicle.status = "reserved";
+  vehicle.linkedQuoteId = quoteNo;
+  const pl = (vehicle.payload && typeof vehicle.payload === "object"
+    ? vehicle.payload
+    : {}) as Record<string, unknown>;
+  vehicle.payload = {
+    ...pl,
+    quoteNo,
+    customerName: input.customerName || pl.customerName,
+    variant: input.variant || pl.variant,
+    colour: input.colour || pl.colour,
+    batteryType: input.batteryType || pl.batteryType || input.variant,
+    source: "quotation",
+  };
+  if (input.model) vehicle.model = input.model;
+  await vehicle.save();
+  return vehicle;
+}
