@@ -7,6 +7,7 @@ import { buildDefaultHeroForDealer } from "../services/heroCms.service";
 import { buildDefaultFeaturesForDealer } from "../services/featuresCms.service";
 import { syncShowcaseProductsForDealer } from "../services/productsCms.service";
 import { syncDefaultGalleryForDealer } from "../services/galleryCms.service";
+import { normalizeFooterCms } from "../services/footerCms.service";
 import {
   cibilPaymentAdminView,
   mergeCibilPaymentUpdate
@@ -272,11 +273,15 @@ router.put("/cms/i18n", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 router.get("/cms/footer", async (req, res, next) => {
-  try { const sf = await dealerStorefront(req); res.json({ data: sf.footer || {} }); } catch (e) { next(e); }
+  try {
+    const sf = await dealerStorefront(req);
+    res.json({ data: normalizeFooterCms(sf.footer || {}) });
+  } catch (e) { next(e); }
 });
 router.put("/cms/footer", async (req, res, next) => {
   try {
-    const sf = await Storefront.findOneAndUpdate({ dealerId: req.user!.dealerId }, { footer: req.body }, { new: true });
+    const footer = normalizeFooterCms(req.body);
+    const sf = await Storefront.findOneAndUpdate({ dealerId: req.user!.dealerId }, { footer }, { new: true });
     res.json({ data: sf?.footer || {} });
   } catch (e) { next(e); }
 });

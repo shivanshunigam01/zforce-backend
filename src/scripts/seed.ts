@@ -80,19 +80,20 @@ async function main() {
     "cms",
     "reports",
     "dealer_management",
-    "account_management",
     "user_management",
     "hr",
     "settings",
   ];
   await User.findOneAndUpdate(
-    { userId: "dealer", role: "super_admin" },
+    { userId: "dealer" },
     {
       userId: "dealer",
       email: "dealer@zforce.example",
       displayName: "Dealer",
       passwordHash,
       role: "super_admin",
+      dealerId: "dealer-demo",
+      tenantId: "tenant-demo",
       isActive: true,
       permissions: dealerPanelPermissions,
     },
@@ -103,7 +104,12 @@ async function main() {
     { userId: "distributor", email: "distributor@example.com", displayName: "Distributor User", passwordHash, role: "distributor", tenantId: "tenant-demo", isActive: true },
     { upsert: true, new: true }
   );
-  await User.deleteOne({ userId: "dealer", role: "dealer" });
+
+  const { seedDealerUsers, dealerUserCredentialsSummary } = await import("../services/seedDealerUsers.service");
+  const dealerUsers = await seedDealerUsers("dealer-demo", "tenant-demo", passwordHash);
+  console.log(`  Dealer role users: ${dealerUsers.portalUsers} portal logins, ${dealerUsers.staff} staff directory rows`);
+  console.log("  Dealer test logins (password: Password@123):");
+  for (const line of dealerUserCredentialsSummary()) console.log(line);
 
   if (env.cloudinaryCloudName && env.cloudinaryApiKey && env.cloudinaryApiSecret) {
     console.log("Uploading default hero slides to Cloudinary (dealer-demo)…");
@@ -152,6 +158,20 @@ async function main() {
   const { seedHrDemo } = await import("../services/seedHrDemo.service");
   const hr = await seedHrDemo("dealer-demo", "tenant-demo");
   console.log(`  HR demo: ${hr.employees} employees, ${hr.attendance} attendance rows`);
+
+  const { normalizeFooterCms } = await import("../services/footerCms.service");
+  const footerRows = await Storefront.find({ dealerId: "dealer-demo" }).select("slug footer");
+  let footerFixed = 0;
+  for (const sf of footerRows) {
+    const normalized = normalizeFooterCms(sf.footer || {});
+    const before = JSON.stringify(sf.footer || {});
+    const after = JSON.stringify(normalized);
+    if (before !== after) {
+      await Storefront.updateOne({ _id: sf._id }, { $set: { footer: normalized } });
+      footerFixed += 1;
+    }
+  }
+  if (footerFixed) console.log(`  Footer CMS: normalized quick links on ${footerFixed} storefront(s)`);
 
   console.log("Seed complete");
   process.exit(0);

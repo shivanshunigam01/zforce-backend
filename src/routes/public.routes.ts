@@ -21,6 +21,7 @@ import { AppError } from "../utils/errors";
 import { maskPan } from "../utils/crypto";
 import { stripCibilRequestForPublic } from "../utils/cibilPublic";
 import { publicCibilConfigView } from "../services/cibilPaymentConfig.service";
+import { normalizeFooterCms } from "../services/footerCms.service";
 import path from "path";
 import fs from "fs";
 
@@ -39,7 +40,7 @@ router.get("/bootstrap", async (req, res, next) => {
         },
         site: sf.siteSettings || {},
         nav: sf.nav || {},
-        footer: sf.footer || {},
+        footer: normalizeFooterCms(sf.footer || {}),
         homePage: {
           sectionsOrder: sf.homepageLayout?.sectionsOrder || ["hero", "productHighlight", "features", "offers", "emi", "why", "testimonials", "enquiry"],
           ...sf.homeSections
@@ -51,7 +52,7 @@ router.get("/bootstrap", async (req, res, next) => {
 });
 
 router.get("/navigation", async (req, res) => res.json({ data: req.storefront!.nav || {} }));
-router.get("/footer", async (req, res) => res.json({ data: req.storefront!.footer || {} }));
+router.get("/footer", async (req, res) => res.json({ data: normalizeFooterCms(req.storefront!.footer || {}) }));
 router.get("/floating-cta", async (req, res) => res.json({ data: req.storefront!.floatingCta || {} }));
 router.get("/site-settings", async (req, res) => res.json({ data: req.storefront!.siteSettings || {} }));
 router.get("/i18n", async (req, res) => {
